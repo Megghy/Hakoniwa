@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/Hakoniwa.csproj" />
+  <Project Path="tests/Hakoniwa.Tests/Hakoniwa.Tests.csproj" />
+</Solution>

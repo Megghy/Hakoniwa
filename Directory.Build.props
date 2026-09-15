@@ -1,0 +1,19 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Deterministic>true</Deterministic>
+    <PlatformTarget>x86</PlatformTarget>
+    <Company>Hakoniwa Team</Company>
+    <Product>Hakoniwa - Terraria Architect Workshop</Product>
+    <Copyright>Copyright © 2025</Copyright>
+    <TerrariaDir Condition="'$(TerrariaDir)' == ''">D:\SteamLibrary\steamapps\common\Terraria</TerrariaDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="PolySharp" Version="1.14.1" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

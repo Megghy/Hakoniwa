@@ -1,0 +1,30 @@
+# Hakoniwa Git Ignore
+
+# Development & Private Docs
+dev-docs/
+/dev-docs/
+
+# Visual Studio & JetBrains IDE
+.vs/
+.idea/
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+
+# Build Results & Temp
+bin/
+obj/
+[Bb]in/
+[Oo]bj/
+*.log
+*.tmp
+*.cache
+
+# Test results
+TestResults/
+*.trx
+
+# OS Files
+.DS_Store
+Thumbs.db
