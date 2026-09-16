@@ -35,8 +35,11 @@ public sealed class FloatingBall
     public FloatingBall()
     {
         _actions.Add(new("工坊", "箱庭工坊主工作台", Icons.Home, () => HakoniwaUi.StudioIsOpen, () => HakoniwaUi.StudioIsOpen = !HakoniwaUi.StudioIsOpen));
+        _actions.Add(new("物品", "独立物品选择器", Icons.Box, () => HakoniwaUi.ItemPickerIsOpen, () => HakoniwaUi.ItemPickerIsOpen = !HakoniwaUi.ItemPickerIsOpen));
+        _actions.Add(new("改物", "高级物品属性编辑器", Icons.Pencil, () => HakoniwaUi.ItemEditorIsOpen, () => HakoniwaUi.ItemEditorIsOpen = !HakoniwaUi.ItemEditorIsOpen));
         _actions.Add(new("上帝", "上帝模式 [无敌]", Icons.Shield, () => CheatState.GodMode, () => CheatState.GodMode = !CheatState.GodMode));
         _actions.Add(new("全亮", "全图照明 [夜视]", Icons.Sun, () => CheatState.FullBright, () => CheatState.FullBright = !CheatState.FullBright));
+        _actions.Add(new("穿墙", "穿墙模式 [无碰撞]", Icons.Move, () => CheatState.NoClip, () => CheatState.NoClip = !CheatState.NoClip));
         _actions.Add(new("无限", "无限放置与触及", Icons.Infinity, () => CheatState.InfiniteReach && CheatState.InfiniteItems, () =>
         {
             bool toggle = !(CheatState.InfiniteReach && CheatState.InfiniteItems);
@@ -76,17 +79,8 @@ public sealed class FloatingBall
         if (_expandAnim > 0.02f)
             cover = OrbitOf(CountRings(_actions.Count, totalSpan, fullCircle) - 1) + SubRadius + 10f;
 
-        ImGui.SetNextWindowPos(_pos - new Vector2(cover, cover), ImGuiCond.Always);
-        ImGui.SetNextWindowSize(new Vector2(cover * 2f, cover * 2f));
-        ImGui.SetNextWindowBgAlpha(0f);
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
-        if (!ImGui.Begin("##HakoniwaFloatingBall", Ui.Chrome))
-        {
-            ImGui.End();
-            ImGui.PopStyleVar(2);
+        if (!Ui.BeginChrome("##HakoniwaFloatingBall", _pos - new Vector2(cover, cover), new Vector2(cover * 2f, cover * 2f)))
             return;
-        }
 
         var drawList = ImGui.GetWindowDrawList();
         Ui.Invisible("##main", _pos - new Vector2(MainRadius), new Vector2(MainRadius * 2f));
@@ -98,9 +92,7 @@ public sealed class FloatingBall
             DrawOrbit(drawList, centerAngle, totalSpan, fullCircle, ref hoveredHint);
 
         DrawMainButton(drawList, _pos, hoverMain || _isDragging, _isExpanded);
-
-        ImGui.End();
-        ImGui.PopStyleVar(2);
+        Ui.EndChrome();
 
         if (hoveredHint is not null && !_isDragging)
             ImGui.SetTooltip(hoveredHint);

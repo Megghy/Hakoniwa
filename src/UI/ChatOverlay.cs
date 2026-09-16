@@ -10,7 +10,7 @@ using Terraria.UI.Chat;
 namespace Hakoniwa.UI;
 
 /// <summary>
-/// 现代化 ImGui 聊天输入框 (支持光标移动、撤销重做、历史记录与 TShock 命令补全)
+/// 箱庭工坊自定义聊天框组件 (支持 IME 输入法、历史记录导航、TShock/原版指令智能补全)
 /// </summary>
 public sealed class ChatOverlay
 {
@@ -63,6 +63,12 @@ public sealed class ChatOverlay
     private bool _ignoreEnter;
     private readonly List<CommandHint> _matchedCandidates = [];
     private int _selectedCandidateIndex;
+    private readonly ImGuiInputTextCallback _textCallback;
+
+    public ChatOverlay()
+    {
+        _textCallback = TextCallback;
+    }
 
     public void Open()
     {
@@ -79,6 +85,7 @@ public sealed class ChatOverlay
         IsOpen = false;
         _inputBuffer = string.Empty;
         _historyIndex = -1;
+        _matchedCandidates.Clear();
     }
 
     public unsafe void Draw()
@@ -87,9 +94,9 @@ public sealed class ChatOverlay
             return;
 
         var io = ImGui.GetIO();
-        float width = Math.Min(io.DisplaySize.X - 40f, 720f);
+        float width = Math.Min(io.DisplaySize.X - 40f, 760f);
         float posX = 20f;
-        float posY = io.DisplaySize.Y - 56f;
+        float posY = io.DisplaySize.Y - 58f;
 
         UpdateCandidateMatches();
 
@@ -99,30 +106,37 @@ public sealed class ChatOverlay
 
         // 绘制底部主聊天条
         ImGui.SetNextWindowPos(new Vector2(posX, posY));
-        ImGui.SetNextWindowSize(new Vector2(width, 42f));
+        ImGui.SetNextWindowSize(new Vector2(width, 44f));
         if (ImGui.Begin("##HakoniwaChatInputBar", Ui.Overlay | ImGuiWindowFlags.NoMove))
         {
-            ImGui.AlignTextToFramePadding();
-            ImGui.TextColored(new Vector4(0.35f, 0.78f, 0.98f, 1f), "说:");
-            ImGui.SameLine();
+            var dl = ImGui.GetWindowDrawList();
+            var wp = ImGui.GetWindowPos();
+            var ws = ImGui.GetWindowSize();
+            Ui.DrawPixelPanel(dl, wp, wp + ws, 0xF00D111A, Ui.GoldBorder, 0xFF1B2436);
+
+            ImGui.SetCursorPos(new Vector2(10f, 10f));
+            Icons.DrawDirect(dl, wp + new Vector2(18f, 22f), Icons.Script, 255, Ui.GoldBorder, 18f);
+            ImGui.Dummy(new Vector2(20f, 20f));
+            ImGui.SameLine(0f, 6f);
 
             if (_ignoreEnter && !ImGui.IsKeyDown(ImGuiKey.Enter))
                 _ignoreEnter = false;
 
-            if (_focusRequested || !ImGui.IsWindowFocused())
+            if (_focusRequested)
+            {
                 ImGui.SetKeyboardFocusHere();
+                _focusRequested = false;
+            }
 
-            ImGui.SetNextItemWidth(width - 90f);
+            ImGui.SetNextItemWidth(width - 110f);
             var inputFlags = ImGuiInputTextFlags.EnterReturnsTrue |
                              ImGuiInputTextFlags.CallbackHistory |
                              ImGuiInputTextFlags.CallbackCompletion;
 
-            bool submitted = ImGui.InputText("##chat_text_box", ref _inputBuffer, (UIntPtr)512, inputFlags, TextCallback);
-            bool focused = ImGui.IsItemActive() || ImGui.IsItemFocused();
-            _focusRequested = !focused;
+            bool submitted = ImGui.InputText("##chat_text_box", ref _inputBuffer, (UIntPtr)512, inputFlags, _textCallback);
 
-            ImGui.SameLine();
-            bool sendClicked = ImGui.Button("发送", new Vector2(46f, 0f));
+            ImGui.SameLine(0f, 8f);
+            bool sendClicked = ImGui.Button("发送", new Vector2(56f, 24f));
             if (sendClicked || (submitted && !_ignoreEnter))
                 SubmitMessage();
 
@@ -137,20 +151,25 @@ public sealed class ChatOverlay
     {
         int maxShow = Math.Min(6, _matchedCandidates.Count);
         float popupHeight = maxShow * 26f + 16f;
-        ImGui.SetNextWindowPos(new Vector2(anchor.X, anchor.Y - popupHeight - 6f));
+        ImGui.SetNextWindowPos(new Vector2(anchor.X, anchor.Y - popupHeight - 4f));
         ImGui.SetNextWindowSize(new Vector2(width, popupHeight));
 
         if (ImGui.Begin("##ChatAutocompletePopup", Ui.Overlay | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoFocusOnAppearing))
         {
+            var dl = ImGui.GetWindowDrawList();
+            var wp = ImGui.GetWindowPos();
+            var ws = ImGui.GetWindowSize();
+            Ui.DrawPixelPanel(dl, wp, wp + ws, 0xF40B0E16, Ui.ChipLine, 0xFF141926);
+
             for (int i = 0; i < _matchedCandidates.Count; i++)
             {
                 var candidate = _matchedCandidates[i];
                 bool isSelected = i == _selectedCandidateIndex;
 
                 if (isSelected)
-                    ImGui.PushStyleColor(ImGuiCol.Header, new Vector4(0.35f, 0.24f, 0.58f, 0.95f));
+                    ImGui.PushStyleColor(ImGuiCol.Header, new Vector4(0.22f, 0.45f, 0.75f, 0.85f));
 
-                if (ImGui.Selectable($"{candidate.Syntax} - {candidate.Description}##c_{i}", isSelected))
+                if (ImGui.Selectable($"{candidate.Syntax}  -  {candidate.Description}##c_{i}", isSelected))
                 {
                     _inputBuffer = candidate.Command + " ";
                     _focusRequested = true;
@@ -242,7 +261,7 @@ public sealed class ChatOverlay
                 _history.Add(text);
 
             SendChatMessage(text);
-            SoundEngine.PlaySound(11);
+            SoundEngine.PlaySound(Terraria.ID.SoundID.MenuTick);
         }
 
         Close();

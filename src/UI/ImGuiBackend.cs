@@ -13,7 +13,7 @@ using Num = System.Numerics;
 namespace Hakoniwa.UI;
 
 /// <summary>
-/// FNA / XNA 与 Dear ImGui (Hexa.NET.ImGui) 的极简渲染后端
+/// FNA / XNA 与 Dear ImGui (Hexa.NET.ImGui) 的极简渲染与 Win32 输入法后端
 /// </summary>
 public sealed class ImGuiBackend : IDisposable
 {
@@ -26,16 +26,12 @@ public sealed class ImGuiBackend : IDisposable
     private int _indexBufferSize;
     private bool _texturesDirty;
     private int _scroll;
-    private IntPtr _prevWndProc;
-    private WndProc? _wndProc;
-    private readonly List<uint> _chars = [];
+    private ImGuiIme? _ime;
     private readonly RasterizerState _rasterizer = new()
     {
         CullMode = CullMode.None,
         ScissorTestEnable = true,
     };
-
-    private delegate IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
     private static readonly Dictionary<IntPtr, Texture2D> TextureById = [];
     private static readonly Dictionary<Texture2D, IntPtr> IdByTexture = [];
@@ -125,6 +121,7 @@ public sealed class ImGuiBackend : IDisposable
             return;
         var io = ImGui.GetIO();
         io.MouseDrawCursor = io.WantCaptureMouse || extraCursor;
+        _ime?.Draw();
         ImGui.Render();
         var drawData = ImGui.GetDrawData();
         SyncTextures(drawData);
@@ -414,6 +411,8 @@ public sealed class ImGuiBackend : IDisposable
         io.AddMouseWheelEvent(0f, (mouse.ScrollWheelValue - _scroll) / 120f);
         _scroll = mouse.ScrollWheelValue;
 
+        _ime?.Flush(io);
+
         var kb = Keyboard.GetState();
         AddKey(io, kb, Keys.Tab, ImGuiKey.Tab);
         AddKey(io, kb, Keys.Left, ImGuiKey.LeftArrow);
@@ -426,66 +425,43 @@ public sealed class ImGuiBackend : IDisposable
         AddKey(io, kb, Keys.Back, ImGuiKey.Backspace);
         AddKey(io, kb, Keys.Enter, ImGuiKey.Enter);
         AddKey(io, kb, Keys.Escape, ImGuiKey.Escape);
-        AddKey(io, kb, Keys.Space, ImGuiKey.Space);
-        for (int i = 0; i < 26; i++)
-            AddKey(io, kb, Keys.A + i, ImGuiKey.A + i);
-        for (int i = 0; i < 10; i++)
-            AddKey(io, kb, Keys.D0 + i, ImGuiKey.Key0 + i);
+        if (_ime is not { Composing: true })
+        {
+            AddKey(io, kb, Keys.Space, ImGuiKey.Space);
+            for (int i = 0; i < 26; i++)
+                AddKey(io, kb, Keys.A + i, ImGuiKey.A + i);
+            for (int i = 0; i < 10; i++)
+                AddKey(io, kb, Keys.D0 + i, ImGuiKey.Key0 + i);
+        }
 
         io.AddKeyEvent(ImGuiKey.ModCtrl, kb.IsKeyDown(Keys.LeftControl) || kb.IsKeyDown(Keys.RightControl));
         io.AddKeyEvent(ImGuiKey.ModShift, kb.IsKeyDown(Keys.LeftShift) || kb.IsKeyDown(Keys.RightShift));
         io.AddKeyEvent(ImGuiKey.ModAlt, kb.IsKeyDown(Keys.LeftAlt) || kb.IsKeyDown(Keys.RightAlt));
-
-        for (int i = 0; i < _chars.Count; i++)
-            io.AddInputCharacter(_chars[i]);
-        _chars.Clear();
     }
 
     private static void AddKey(ImGuiIOPtr io, KeyboardState kb, Keys key, ImGuiKey mapped)
         => io.AddKeyEvent(mapped, kb.IsKeyDown(key));
 
-    private void AttachInput()
+    private unsafe void AttachInput()
     {
         var handle = Main.instance.Window.Handle;
         if (handle == IntPtr.Zero)
             return;
-        _wndProc = Hook;
-        _prevWndProc = SetWindowLong(handle, -4, Marshal.GetFunctionPointerForDelegate(_wndProc));
-    }
 
-    private void DetachInput()
-    {
-        var handle = Main.instance.Window.Handle;
-        if (handle != IntPtr.Zero && _prevWndProc != IntPtr.Zero)
-            SetWindowLong(handle, -4, _prevWndProc);
-        _wndProc = null;
-    }
-
-    private IntPtr Hook(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
-    {
-        if (msg is 0x0102 or 0x0109 or 0x0286)
-        {
-            int ch = wParam.ToInt32() & 0xFFFF;
-            if (ch >= 32)
-                _chars.Add((uint)ch);
-        }
-
-        return CallWindowProc(_prevWndProc, hWnd, msg, wParam, lParam);
+        var mainViewport = ImGui.GetMainViewport();
+        mainViewport.PlatformHandle = (void*)handle;
+        mainViewport.PlatformHandleRaw = (void*)handle;
+        _ime = new ImGuiIme();
     }
 
     public void Dispose()
     {
-        DetachInput();
+        _ime?.Dispose();
+        _ime = null;
         _fontTexture?.Dispose();
         _vertexBuffer?.Dispose();
         _indexBuffer?.Dispose();
         _effect?.Dispose();
         _rasterizer.Dispose();
     }
-
-    [DllImport("user32.dll", EntryPoint = "SetWindowLong")]
-    private static extern IntPtr SetWindowLong(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr CallWindowProc(IntPtr lpPrevWndFunc, IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 }

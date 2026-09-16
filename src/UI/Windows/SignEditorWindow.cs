@@ -5,9 +5,6 @@ using Terraria;
 
 namespace Hakoniwa.UI.Windows;
 
-/// <summary>
-/// 现代化 ImGui 标牌编辑器 (多行编辑、撤销重做、富文本复制粘贴)
-/// </summary>
 public sealed class SignEditorWindow
 {
     public string Title => "标牌编辑 (Sign Editor)###HakoniwaSignEditor";

@@ -103,7 +103,7 @@ public sealed class EditorToolbar
         if (on || hover)
             dl.AddRectFilled(min, max, on ? 0xE02A2440 : 0x80221E2C, 5f);
         if (on)
-            dl.AddRectFilled(min, new Vector2(min.X + 2f, max.Y), 0xFF38BDF8, 1f);
+            dl.AddRectFilled(min, new Vector2(min.X + 2f, max.Y), Ui.ChipOn, 1f);
         Icons.DrawDirect(dl, (min + max) * 0.5f, icon);
 
         if (hover)

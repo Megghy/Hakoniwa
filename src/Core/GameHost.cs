@@ -20,8 +20,10 @@ public static class GameHost
             Terraria.Program.SavePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), "My Games", "Terraria");
 
         CheatState.Load();
+        InventoryPacks.Load();
         using var hooks = new HookManager();
         CheatHooks.Install(hooks);
+        ItemTooltipExtra.Install(hooks);
         HakoniwaUi.Install();
         Terraria.Program.LaunchGame(args);
     }

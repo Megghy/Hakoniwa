@@ -14,6 +14,7 @@ public static class CheatState
     public static bool InfiniteItems = true;
     public static bool FreePlacement = true;
     public static bool FullBright;
+    public static bool NoClip;
     public static bool FreezeTime;
     public static bool ClickTeleport = true;
     public static bool UnlockFps = true;
@@ -59,6 +60,7 @@ public static class CheatState
         InfiniteItems = data.InfiniteItems;
         FreePlacement = data.FreePlacement;
         FullBright = data.FullBright;
+        NoClip = data.NoClip;
         FreezeTime = data.FreezeTime;
         ClickTeleport = data.ClickTeleport;
         UnlockFps = data.UnlockFps;
@@ -97,6 +99,7 @@ public static class CheatState
         InfiniteItems = InfiniteItems,
         FreePlacement = FreePlacement,
         FullBright = FullBright,
+        NoClip = NoClip,
         FreezeTime = FreezeTime,
         ClickTeleport = ClickTeleport,
         UnlockFps = UnlockFps,
@@ -125,6 +128,7 @@ public static class CheatState
         public bool InfiniteItems { get; set; }
         public bool FreePlacement { get; set; }
         public bool FullBright { get; set; }
+        public bool NoClip { get; set; }
         public bool FreezeTime { get; set; }
         public bool ClickTeleport { get; set; }
         public bool UnlockFps { get; set; } = true;

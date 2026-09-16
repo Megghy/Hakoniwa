@@ -21,4 +21,22 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Hakoniwa.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\libs\ReLogic.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>ReLogic.dll</Link>
+    </None>
+    <None Include="$(NuGetPackageRoot)\hexa.net.imgui\2.2.9\runtimes\win-x86\native\cimgui.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>cimgui.dll</Link>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="ReLogic">
+      <HintPath>$(MSBuildThisFileDirectory)..\..\libs\ReLogic.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
 </Project>

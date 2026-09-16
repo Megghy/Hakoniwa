@@ -8,6 +8,7 @@ using Microsoft.Xna.Framework.Input;
 using Terraria;
 using Terraria.DataStructures;
 using Terraria.GameInput;
+using Hakoniwa.Engine;
 using Terraria.Graphics.Light;
 
 namespace Hakoniwa.Core;
@@ -18,6 +19,7 @@ public static class CheatHooks
     public static event Action? PostUpdate;
     public static bool BlockGameMouse;
     public static bool BlockGameKeyboard;
+    public static bool WantTextInput;
 
     private static ILightingEngine? _vanillaLighting;
     private static bool _fullBrightApplied;
@@ -42,6 +44,7 @@ public static class CheatHooks
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.Update), typeof(GameTime)), Update);
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.SetTitle), typeof(bool)), SetTitle);
         hooks.RegisterDetour(Req(typeof(PlayerInput), nameof(PlayerInput.UpdateInput)), UpdateInput);
+        hooks.RegisterDetour(Req(typeof(Main), nameof(Main.HandleIME)), HandleIME);
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.ClearHoverItem)), ClearHoverItem);
         hooks.RegisterDetour(Req(typeof(Lighting), nameof(Lighting.LightTiles), typeof(Rectangle)), LightTiles);
     }
@@ -113,6 +116,14 @@ public static class CheatHooks
             self.pickSpeed = 0.01f;
         }
 
+        if (CheatState.NoClip)
+        {
+            self.gravity = 0f;
+            self.maxFallSpeed = 0f;
+            self.noFallDmg = true;
+            self.fallStart = (int)(self.position.Y / 16f);
+        }
+
         if (!CheatState.GodMode)
             return;
         self.statLife = self.statLifeMax2;
@@ -120,6 +131,21 @@ public static class CheatHooks
         self.immune = true;
         self.immuneTime = 2;
         self.breath = self.breathMax;
+        for (int i = 0; i < Player.maxBuffs; i++)
+        {
+            int type = self.buffType[i];
+            if (type > 0 && type < Main.debuff.Length && Main.debuff[type])
+            {
+                self.DelBuff(i);
+                i--;
+            }
+        }
+
+        for (int i = 0; i < Main.debuff.Length; i++)
+        {
+            if (Main.debuff[i])
+                self.buffImmune[i] = true;
+        }
     }
 
     private static bool InRange(Func<Player, int, int, TileReachCheckSettings, int, bool> orig, Player self, int targetX, int targetY, TileReachCheckSettings settings, int extra)
@@ -213,6 +239,22 @@ public static class CheatHooks
         return hz < 30 ? 60 : hz;
     }
 
+    private static void HandleIME(Action<Main> orig, Main self)
+    {
+        if (WantTextInput)
+        {
+            PlayerInput.WritingText = true;
+            orig(self);
+            return;
+        }
+
+        bool keep = BlockGameKeyboard;
+        PlayerInput.WritingText = false;
+        orig(self);
+        if (keep)
+            PlayerInput.WritingText = true;
+    }
+
     private static void UpdateInput(Action orig)
     {
         if (BlockGameKeyboard)
@@ -220,7 +262,17 @@ public static class CheatHooks
         orig();
         if (BlockGameKeyboard)
             PlayerInput.WritingText = true;
-        if (!BlockGameMouse && !CheatState.SelectHeld(Keyboard.GetState()))
+        Main.instance.HandleIME();
+
+        var kb = Keyboard.GetState();
+        bool isCtrl = kb.IsKeyDown(Keys.LeftControl) || kb.IsKeyDown(Keys.RightControl);
+        if (isCtrl && (EditorSession.Tool is EditorTool.Brush or EditorTool.Eraser))
+        {
+            PlayerInput.ScrollWheelDelta = 0;
+            PlayerInput.ScrollWheelDeltaForUI = 0;
+        }
+
+        if (!BlockGameMouse && !CheatState.SelectHeld(kb))
             return;
 
         PlayerInput.Triggers.Current.MouseLeft = false;

@@ -19,7 +19,7 @@ public static class NotifyHost
     }
 
     private static readonly List<Toast> _items = [];
-    private static bool _god, _reach, _itemsOn, _free, _bright, _freeze, _teleport, _unlockFps, _armed;
+    private static bool _god, _reach, _itemsOn, _free, _bright, _noclip, _freeze, _teleport, _unlockFps, _armed;
 
     public static void Enqueue(string text)
     {
@@ -35,6 +35,7 @@ public static class NotifyHost
         Check(ref _itemsOn, CheatState.InfiniteItems, "无限物品");
         Check(ref _free, CheatState.FreePlacement, "悬空放置");
         Check(ref _bright, CheatState.FullBright, "全图照明");
+        Check(ref _noclip, CheatState.NoClip, "穿墙模式");
         Check(ref _freeze, CheatState.FreezeTime, "锁定时间");
         Check(ref _teleport, CheatState.ClickTeleport, "快捷传送");
         Check(ref _unlockFps, CheatState.UnlockFps, "帧率跟随屏幕刷新率");
