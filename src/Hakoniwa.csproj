@@ -6,16 +6,25 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <OutputPath>$(TerrariaDir)\</OutputPath>
     <UseWindowsForms>true</UseWindowsForms>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="MonoMod.RuntimeDetour" Version="25.2.2" />
     <PackageReference Include="ZstdSharp.Port" Version="0.8.4" />
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
-    <PackageReference Include="ImGui.NET" Version="1.90.8.1" />
+    <PackageReference Include="ImGui.NET" Version="1.90.8.1">
+      <ExcludeAssets>native</ExcludeAssets>
+    </PackageReference>
     <PackageReference Include="System.Numerics.Vectors" Version="4.5.0" />
     <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
     <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Assets\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>
@@ -23,6 +32,10 @@
       <HintPath>$(TerrariaDir)\Terraria.exe</HintPath>
       <Private>false</Private>
       <Publicize>true</Publicize>
+    </Reference>
+    <Reference Include="ReLogic">
+      <HintPath>$(MSBuildThisFileDirectory)..\libs\ReLogic.dll</HintPath>
+      <Private>false</Private>
     </Reference>
     <Reference Include="Microsoft.Xna.Framework">
       <HintPath>C:\Windows\Microsoft.NET\assembly\GAC_32\Microsoft.Xna.Framework\v4.0_4.0.0.0__842cf8be1de50553\Microsoft.Xna.Framework.dll</HintPath>
@@ -38,7 +51,11 @@
     </Reference>
   </ItemGroup>
 
-  <Target Name="CopyCimguiX86" AfterTargets="Build">
-    <Copy SourceFiles="$(NuGetPackageRoot)\imgui.net\1.90.8.1\runtimes\win-x86\native\cimgui.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+  <Target Name="SetLargeAddressAware" AfterTargets="Build">
+    <Exec Command="powershell -NoProfile -File &quot;$(MSBuildThisFileDirectory)set-laa.ps1&quot; -Path &quot;$(TargetPath)&quot;" />
+  </Target>
+
+  <Target Name="CopyCimguiX86" AfterTargets="Build" Condition="!Exists('$(OutputPath)cimgui.dll')">
+    <Copy SourceFiles="$(NuGetPackageRoot)\imgui.net\1.90.8.1\runtimes\win-x86\native\cimgui.dll" DestinationFolder="$(OutputPath)" />
   </Target>
 </Project>

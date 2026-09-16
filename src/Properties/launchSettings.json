@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "Hakoniwa": {
+      "commandName": "Project",
+      "workingDirectory": "D:\\SteamLibrary\\steamapps\\common\\Terraria",
+      "nativeDebugging": true
+    }
+  }
+}

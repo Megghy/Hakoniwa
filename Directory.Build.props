@@ -7,10 +7,17 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Deterministic>true</Deterministic>
     <PlatformTarget>x86</PlatformTarget>
+    <LargeAddressAware>true</LargeAddressAware>
     <Company>Hakoniwa Team</Company>
     <Product>Hakoniwa - Terraria Architect Workshop</Product>
     <Copyright>Copyright © 2025</Copyright>
     <TerrariaDir Condition="'$(TerrariaDir)' == ''">D:\SteamLibrary\steamapps\common\Terraria</TerrariaDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <DebugType>full</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <Optimize>false</Optimize>
   </PropertyGroup>
 
   <ItemGroup>

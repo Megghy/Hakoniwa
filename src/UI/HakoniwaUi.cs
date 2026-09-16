@@ -12,13 +12,23 @@ namespace Hakoniwa.UI;
 public static class HakoniwaUi
 {
     public static bool Visible = true;
+    public static bool StudioIsOpen
+    {
+        get => Studio.IsOpen;
+        set => Studio.IsOpen = value;
+    }
+
     private static ImGuiBackend? _backend;
-    private static readonly WindowManager Windows = new();
-    private static readonly RadialLauncher Launcher = new();
+    private static readonly StudioWindow Studio = new();
+    private static readonly FloatingBall FloatingBall = new();
+    private static readonly ChatOverlay Chat = new();
+    private static readonly SignEditorWindow SignEditor = new();
+
     private static bool _leftWasDown;
     private static bool _insertWasDown;
     private static bool _middleWasDown;
     private static bool _rightWasDown;
+    private static bool _enterWasDown;
     private static int _hotkeys;
 
     public static void Install()
@@ -26,13 +36,6 @@ public static class HakoniwaUi
         CheatHooks.PostUpdate += Tick;
         Main.OnEngineLoad += Init;
         Main.OnPostDraw += _ => Render();
-        Windows.Add(new ToolboxWindow());
-        Windows.Add(new WorldControlWindow());
-        Windows.Add(new SelectionWindow(EditorSession.Selection));
-        Windows.Add(new SchematicWindow());
-        Windows.Add(new ItemBrowserWindow());
-        Windows.Add(new CharacterWindow());
-        Windows.Add(new ItemEditorWindow());
     }
 
     public static void Tick()
@@ -40,7 +43,8 @@ public static class HakoniwaUi
         if (_backend is null || Main.gameMenu)
             return;
 
-        bool insert = Keyboard.GetState().IsKeyDown(Keys.Insert);
+        var kb = Keyboard.GetState();
+        bool insert = kb.IsKeyDown(Keys.Insert);
         if (insert && !_insertWasDown)
             Visible = !Visible;
         _insertWasDown = insert;
@@ -49,6 +53,8 @@ public static class HakoniwaUi
         if (io.WantCaptureMouse)
             Main.LocalPlayer.mouseInterface = true;
 
+        HandleChatToggle(kb, io);
+        SignEditor.UpdateSignState();
         HandleTeleport(io);
         HandleEditor(io);
     }
@@ -57,17 +63,46 @@ public static class HakoniwaUi
     {
         if (_backend is null)
             return;
+
         _backend.NewFrame();
         if (Visible)
-            Windows.DrawAll();
+        {
+            FloatingBall.Draw();
+            Studio.Draw();
+        }
+
+        SignEditor.Draw();
+        Chat.Draw();
         DrawOverlay();
-        Launcher.Draw(Windows.Windows);
         _backend.Render();
+        var io = ImGui.GetIO();
+        CheatHooks.BlockGameMouse = io.WantCaptureMouse;
+        CheatHooks.BlockGameKeyboard = Chat.IsOpen || SignEditor.IsOpen || io.WantCaptureKeyboard;
     }
 
     private static void Init()
     {
         _backend = new ImGuiBackend(Main.instance.GraphicsDevice);
+    }
+
+    private static void HandleChatToggle(KeyboardState kb, ImGuiIOPtr io)
+    {
+        bool enter = kb.IsKeyDown(Keys.Enter);
+        if (enter && !_enterWasDown)
+        {
+            if (!Chat.IsOpen && !io.WantCaptureKeyboard && !Main.editSign && !Main.editChest)
+                Chat.Open();
+        }
+
+        _enterWasDown = enter;
+
+        // 如果游戏原生尝试打开聊天框，自动接管转为 ImGui 聊天输入
+        if (Main.drawingPlayerChat)
+        {
+            Main.drawingPlayerChat = false;
+            if (!Chat.IsOpen)
+                Chat.Open();
+        }
     }
 
     private static void HandleTeleport(ImGuiIOPtr io)
@@ -84,7 +119,9 @@ public static class HakoniwaUi
             Main.mapFullscreen = false;
         }
         else if (!Main.mapFullscreen && middle && !_middleWasDown)
+        {
             TeleportTo(Main.MouseWorld);
+        }
 
         _rightWasDown = right;
         _middleWasDown = middle;
@@ -106,7 +143,7 @@ public static class HakoniwaUi
 
     private static void HandleEditor(ImGuiIOPtr io)
     {
-        if (io.WantCaptureMouse || Main.mapFullscreen)
+        if (io.WantCaptureMouse || Main.mapFullscreen || Chat.IsOpen || SignEditor.IsOpen)
         {
             _leftWasDown = false;
             return;
@@ -123,7 +160,9 @@ public static class HakoniwaUi
                 EditorSession.Selection.DragTo(x, y);
         }
         else if (left && !_leftWasDown)
+        {
             EditorSession.ApplyToolAtCursor();
+        }
 
         var kb = Keyboard.GetState();
         bool ctrl = !io.WantCaptureKeyboard && (kb.IsKeyDown(Keys.LeftControl) || kb.IsKeyDown(Keys.RightControl));
@@ -152,7 +191,7 @@ public static class HakoniwaUi
         var list = ImGui.GetBackgroundDrawList();
         var min = WorldToScreen(new Vector2(selection.MinX * 16, selection.MinY * 16));
         var max = WorldToScreen(new Vector2((selection.MaxX + 1) * 16, (selection.MaxY + 1) * 16));
-        list.AddRect(min, max, ImGui.ColorConvertFloat4ToU32(new Num.Vector4(0.85f, 0.65f, 1f, 0.9f)), 0f, ImDrawFlags.None, 2f);
+        list.AddRect(min, max, ImGui.ColorConvertFloat4ToU32(new Num.Vector4(0.55f, 0.75f, 1f, 0.9f)), 0f, ImDrawFlags.None, 2f);
     }
 
     private static Num.Vector2 WorldToScreen(Vector2 world)

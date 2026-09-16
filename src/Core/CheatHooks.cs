@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.DataStructures;
+using Terraria.GameInput;
 using Terraria.Graphics.Light;
 
 namespace Hakoniwa.Core;
@@ -11,6 +12,8 @@ namespace Hakoniwa.Core;
 public static class CheatHooks
 {
     public static event Action? PostUpdate;
+    public static bool BlockGameMouse;
+    public static bool BlockGameKeyboard;
 
     private static ILightingEngine? _vanillaLighting;
     private const BindingFlags Flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
@@ -29,6 +32,8 @@ public static class CheatHooks
         hooks.RegisterDetour(Req(typeof(WorldGen), nameof(WorldGen.PlaceTile), typeof(int), typeof(int), typeof(int), typeof(bool), typeof(bool), typeof(int), typeof(int)), PlaceTile);
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.Update), typeof(GameTime)), Update);
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.SetTitle), typeof(bool)), SetTitle);
+        hooks.RegisterDetour(Req(typeof(PlayerInput), nameof(PlayerInput.UpdateInput)), UpdateInput);
+        hooks.RegisterDetour(Req(typeof(Main), nameof(Main.ClearHoverItem)), ClearHoverItem);
     }
 
     private static MethodInfo Req(Type type, string name, params Type[] args)
@@ -124,6 +129,41 @@ public static class CheatHooks
         ApplyLighting();
         ApplyTime();
         PostUpdate?.Invoke();
+    }
+
+    private static void UpdateInput(Action orig)
+    {
+        if (BlockGameKeyboard)
+            PlayerInput.WritingText = true;
+        orig();
+        if (BlockGameKeyboard)
+            PlayerInput.WritingText = true;
+        if (!BlockGameMouse)
+            return;
+
+        PlayerInput.Triggers.Current.MouseLeft = false;
+        PlayerInput.Triggers.Current.MouseRight = false;
+        PlayerInput.Triggers.JustPressed.MouseLeft = false;
+        PlayerInput.Triggers.JustPressed.MouseRight = false;
+        Main.mouseLeft = false;
+        Main.mouseRight = false;
+        Main.blockMouse = true;
+        PlayerInput.ScrollWheelDelta = 0;
+        PlayerInput.ScrollWheelDeltaForUI = 0;
+        if (Main.myPlayer >= 0 && Main.player[Main.myPlayer].active)
+            Main.player[Main.myPlayer].mouseInterface = true;
+    }
+
+    private static void ClearHoverItem(Action orig)
+    {
+        orig();
+        if (!BlockGameMouse || Main.myPlayer < 0)
+            return;
+        var player = Main.player[Main.myPlayer];
+        if (!player.active)
+            return;
+        player.mouseInterface = true;
+        Main.blockMouse = true;
     }
 
     private static void ApplyLighting()

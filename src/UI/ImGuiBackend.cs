@@ -1,65 +1,78 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Runtime.InteropServices;
 using ImGuiNET;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using Terraria;
+using Terraria.GameInput;
 using Num = System.Numerics;
 
 namespace Hakoniwa.UI;
 
+/// <summary>
+/// FNA / XNA 与 Dear ImGui (ImGui.NET) 的极简渲染后端
+/// </summary>
 public sealed class ImGuiBackend : IDisposable
 {
-    private const int GwlWndProc = -4;
-    private const uint WmChar = 0x0102;
-
     private readonly GraphicsDevice _device;
-    private readonly BasicEffect _effect;
-    private readonly RasterizerState _rasterizer = new()
-    {
-        CullMode = CullMode.None,
-        DepthBias = 0,
-        FillMode = FillMode.Solid,
-        MultiSampleAntiAlias = false,
-        ScissorTestEnable = true,
-        SlopeScaleDepthBias = 0,
-    };
-
+    private BasicEffect? _effect;
     private Texture2D? _fontTexture;
-    private byte[] _vtx = [];
-    private byte[] _idx = [];
+    private VertexBuffer? _vertexBuffer;
+    private IndexBuffer? _indexBuffer;
+    private int _vertexBufferSize;
+    private int _indexBufferSize;
     private int _scroll;
     private IntPtr _prevWndProc;
     private WndProc? _wndProc;
-    private bool _disposed;
+    private readonly RasterizerState _rasterizer = new()
+    {
+        CullMode = CullMode.None,
+        ScissorTestEnable = true,
+    };
 
     private delegate IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    private static readonly Dictionary<IntPtr, Texture2D> TextureById = [];
+    private static readonly Dictionary<Texture2D, IntPtr> IdByTexture = [];
+    private static int _nextTexId = 2;
 
     public ImGuiBackend(GraphicsDevice device)
     {
         _device = device ?? throw new ArgumentNullException(nameof(device));
-        ImGui.CreateContext();
+        var context = ImGui.CreateContext();
+        ImGui.SetCurrentContext(context);
+
         var io = ImGui.GetIO();
-        io.ConfigFlags |= ImGuiConfigFlags.NavEnableKeyboard;
-        io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
-        Hakoniwa.UI.Themes.HakoniwaTheme.Apply();
+
+        Themes.HakoniwaTheme.Apply();
         BuildFont();
-        _effect = new BasicEffect(device)
-        {
-            LightingEnabled = false,
-            VertexColorEnabled = true,
-            TextureEnabled = true,
-            World = Matrix.Identity,
-            View = Matrix.Identity,
-        };
+        InitGraphics();
         AttachInput();
+    }
+
+    public static IntPtr GetTextureId(Texture2D? texture)
+    {
+        if (texture is null || texture.IsDisposed)
+            return IntPtr.Zero;
+
+        if (IdByTexture.TryGetValue(texture, out var id))
+            return id;
+
+        var newId = (IntPtr)_nextTexId++;
+        TextureById[newId] = texture;
+        IdByTexture[texture] = newId;
+        return newId;
     }
 
     public void NewFrame()
     {
         var io = ImGui.GetIO();
-        io.DisplaySize = new Num.Vector2(_device.PresentationParameters.BackBufferWidth, _device.PresentationParameters.BackBufferHeight);
+        var pp = _device.PresentationParameters;
+        io.DisplaySize = new Num.Vector2(pp.BackBufferWidth, pp.BackBufferHeight);
+        io.DisplayFramebufferScale = Num.Vector2.One;
         io.DeltaTime = Math.Max(1f / 60f, (float)Main.gameTimeCache.ElapsedGameTime.TotalSeconds);
         UpdateInput(io);
         ImGui.NewFrame();
@@ -67,117 +80,193 @@ public sealed class ImGuiBackend : IDisposable
 
     public void Render()
     {
+        var io = ImGui.GetIO();
+        io.MouseDrawCursor = io.WantCaptureMouse;
         ImGui.Render();
-        var data = ImGui.GetDrawData();
-        if (data.CmdListsCount == 0)
+        var drawData = ImGui.GetDrawData();
+        if (drawData.CmdListsCount == 0)
             return;
 
-        _effect.Projection = Matrix.CreateOrthographicOffCenter(0f, _device.PresentationParameters.BackBufferWidth, _device.PresentationParameters.BackBufferHeight, 0f, -1f, 1f);
-        _device.BlendState = BlendState.NonPremultiplied;
-        _device.DepthStencilState = DepthStencilState.None;
-        _device.RasterizerState = _rasterizer;
-        _device.SamplerStates[0] = SamplerState.LinearClamp;
-
-        int vtxSize = data.TotalVtxCount * 20;
-        int idxSize = data.TotalIdxCount * 2;
-        if (_vtx.Length < vtxSize)
-            _vtx = new byte[vtxSize];
-        if (_idx.Length < idxSize)
-            _idx = new byte[idxSize];
-
-        int vtxOff = 0;
-        int idxOff = 0;
-        for (int n = 0; n < data.CmdListsCount; n++)
-        {
-            var list = data.CmdLists[n];
-            int vBytes = list.VtxBuffer.Size * 20;
-            int iBytes = list.IdxBuffer.Size * 2;
-            Marshal.Copy(list.VtxBuffer.Data, _vtx, vtxOff, vBytes);
-            Marshal.Copy(list.IdxBuffer.Data, _idx, idxOff, iBytes);
-            vtxOff += vBytes;
-            idxOff += iBytes;
-        }
-
-        int vtxBase = 0;
-        int idxBase = 0;
-        for (int n = 0; n < data.CmdListsCount; n++)
-        {
-            var list = data.CmdLists[n];
-            for (int c = 0; c < list.CmdBuffer.Size; c++)
-            {
-                var cmd = list.CmdBuffer[c];
-                var clip = new Rectangle(
-                    (int)cmd.ClipRect.X,
-                    (int)cmd.ClipRect.Y,
-                    (int)(cmd.ClipRect.Z - cmd.ClipRect.X),
-                    (int)(cmd.ClipRect.W - cmd.ClipRect.Y));
-                _device.ScissorRectangle = Rectangle.Intersect(clip, _device.Viewport.Bounds);
-                _effect.Texture = cmd.TextureId == IntPtr.Zero || _fontTexture is null ? _fontTexture : _fontTexture;
-                foreach (var pass in _effect.CurrentTechnique.Passes)
-                {
-                    pass.Apply();
-                    DrawCmd(list, cmd, vtxBase, idxBase);
-                }
-            }
-
-            vtxBase += list.VtxBuffer.Size;
-            idxBase += list.IdxBuffer.Size;
-        }
+        var oldViewport = _device.Viewport;
+        UpdateBuffers(drawData);
+        SetupRenderState();
+        RenderCommandLists(drawData);
+        _device.Viewport = oldViewport;
     }
 
-    public void Dispose()
-    {
-        if (_disposed)
-            return;
-        _disposed = true;
-        DetachInput();
-        _fontTexture?.Dispose();
-        _effect.Dispose();
-        ImGui.DestroyContext();
-    }
-
-    private void DrawCmd(ImDrawListPtr list, ImDrawCmdPtr cmd, int vtxBase, int idxBase)
-    {
-        if (cmd.ElemCount == 0)
-            return;
-
-        var vertices = new VertexPositionColorTexture[cmd.ElemCount];
-        var indices = new short[cmd.ElemCount];
-        for (int i = 0; i < cmd.ElemCount; i++)
-        {
-            int index = BitConverter.ToUInt16(_idx, (idxBase + (int)cmd.IdxOffset + i) * 2) + vtxBase + (int)cmd.VtxOffset;
-            float x = BitConverter.ToSingle(_vtx, index * 20);
-            float y = BitConverter.ToSingle(_vtx, index * 20 + 4);
-            float u = BitConverter.ToSingle(_vtx, index * 20 + 8);
-            float v = BitConverter.ToSingle(_vtx, index * 20 + 12);
-            uint col = BitConverter.ToUInt32(_vtx, index * 20 + 16);
-            vertices[i] = new VertexPositionColorTexture(
-                new Vector3(x, y, 0f),
-                new Color((byte)col, (byte)(col >> 8), (byte)(col >> 16), (byte)(col >> 24)),
-                new Vector2(u, v));
-            indices[i] = (short)i;
-        }
-
-        _device.DrawUserIndexedPrimitives(PrimitiveType.TriangleList, vertices, 0, vertices.Length, indices, 0, indices.Length / 3);
-    }
-
-    private void BuildFont()
+    private unsafe void BuildFont()
     {
         var io = ImGui.GetIO();
-        io.Fonts.AddFontDefault();
+        io.Fonts.TexDesiredWidth = 1024;
+        io.Fonts.TexGlyphPadding = 1;
+
+        var cfgNative = ImGuiNative.ImFontConfig_ImFontConfig();
+        var cfg = new ImFontConfigPtr(cfgNative);
+        cfg.OversampleH = 1;
+        cfg.OversampleV = 1;
+        cfg.PixelSnapH = true;
+
+        string fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Fonts", "fusion-pixel-12px-proportional-zh_hans.ttf");
+        // UPEM 1200, hhea line 1600 → ImGui ScaleForPixelHeight(16) == 1 device pixel per font pixel
+        if (File.Exists(fontPath))
+            io.Fonts.AddFontFromFileTTF(fontPath, 16f, cfg, io.Fonts.GetGlyphRangesChineseSimplifiedCommon());
+        else
+            io.Fonts.AddFontDefault(cfg);
+
+        ImGuiNative.ImFontConfig_destroy(cfgNative);
+
         io.Fonts.GetTexDataAsRGBA32(out IntPtr pixels, out int width, out int height, out int _);
+        if (width > 2048 || height > 2048)
+            throw new NotSupportedException($"ImGui font atlas {width}x{height} exceeds XNA Reach 2048.");
+
         var data = new byte[width * height * 4];
         Marshal.Copy(pixels, data, 0, data.Length);
         _fontTexture = new Texture2D(_device, width, height, false, SurfaceFormat.Color);
         _fontTexture.SetData(data);
         io.Fonts.SetTexID((IntPtr)1);
         io.Fonts.ClearTexData();
+        io.Fonts.ClearInputData();
+    }
+
+    private void InitGraphics()
+    {
+        _effect = new BasicEffect(_device)
+        {
+            VertexColorEnabled = true,
+            TextureEnabled = true
+        };
+    }
+
+    private void UpdateBuffers(ImDrawDataPtr drawData)
+    {
+        if (drawData.TotalVtxCount > _vertexBufferSize)
+        {
+            _vertexBuffer?.Dispose();
+            _vertexBufferSize = (int)(drawData.TotalVtxCount * 1.5);
+            _vertexBuffer = new VertexBuffer(_device, typeof(VertexPositionColorTexture), _vertexBufferSize, BufferUsage.WriteOnly);
+        }
+
+        if (drawData.TotalIdxCount > _indexBufferSize)
+        {
+            _indexBuffer?.Dispose();
+            _indexBufferSize = (int)(drawData.TotalIdxCount * 1.5);
+            _indexBuffer = new IndexBuffer(_device, IndexElementSize.SixteenBits, _indexBufferSize, BufferUsage.WriteOnly);
+        }
+
+        int vtxOffset = 0;
+        int idxOffset = 0;
+        for (int i = 0; i < drawData.CmdListsCount; i++)
+        {
+            var cmdList = drawData.CmdLists[i];
+            var vtx = new VertexPositionColorTexture[cmdList.VtxBuffer.Size];
+            for (int v = 0; v < cmdList.VtxBuffer.Size; v++)
+            {
+                var vert = cmdList.VtxBuffer[v];
+                var col = vert.col;
+                var color = new Microsoft.Xna.Framework.Color(
+                    (byte)(col & 0xFF),
+                    (byte)((col >> 8) & 0xFF),
+                    (byte)((col >> 16) & 0xFF),
+                    (byte)((col >> 24) & 0xFF)
+                );
+                vtx[v] = new VertexPositionColorTexture(
+                    new Microsoft.Xna.Framework.Vector3(vert.pos.X - 0.5f, vert.pos.Y - 0.5f, 0f),
+                    color,
+                    new Microsoft.Xna.Framework.Vector2(vert.uv.X, vert.uv.Y)
+                );
+            }
+
+            var idx = new ushort[cmdList.IdxBuffer.Size];
+            for (int k = 0; k < cmdList.IdxBuffer.Size; k++)
+                idx[k] = (ushort)(cmdList.IdxBuffer[k] + vtxOffset);
+
+            _vertexBuffer?.SetData(vtxOffset * Marshal.SizeOf<VertexPositionColorTexture>(), vtx, 0, vtx.Length, Marshal.SizeOf<VertexPositionColorTexture>());
+            _indexBuffer?.SetData(idxOffset * sizeof(ushort), idx, 0, idx.Length);
+
+            vtxOffset += cmdList.VtxBuffer.Size;
+            idxOffset += cmdList.IdxBuffer.Size;
+        }
+    }
+
+    private void SetupRenderState()
+    {
+        var pp = _device.PresentationParameters;
+        _device.Viewport = new Viewport(0, 0, pp.BackBufferWidth, pp.BackBufferHeight);
+        _device.RasterizerState = _rasterizer;
+        _device.BlendState = BlendState.NonPremultiplied;
+        _device.DepthStencilState = DepthStencilState.None;
+        _device.SamplerStates[0] = SamplerState.PointClamp;
+
+        if (_effect is not null)
+        {
+            _effect.World = Matrix.Identity;
+            _effect.View = Matrix.Identity;
+            _effect.Projection = Matrix.CreateOrthographicOffCenter(0f, pp.BackBufferWidth, pp.BackBufferHeight, 0f, -1f, 1f);
+        }
+    }
+
+    private void RenderCommandLists(ImDrawDataPtr drawData)
+    {
+        var vp = _device.Viewport;
+        _device.SetVertexBuffer(_vertexBuffer);
+        _device.Indices = _indexBuffer;
+
+        int vtxOffset = 0;
+        int idxOffset = 0;
+        for (int i = 0; i < drawData.CmdListsCount; i++)
+        {
+            var cmdList = drawData.CmdLists[i];
+            for (int j = 0; j < cmdList.CmdBuffer.Size; j++)
+            {
+                var cmd = cmdList.CmdBuffer[j];
+                if (cmd.ElemCount == 0)
+                    continue;
+
+                int clipX = Math.Max(0, (int)cmd.ClipRect.X);
+                int clipY = Math.Max(0, (int)cmd.ClipRect.Y);
+                int clipW = Math.Min(vp.Width - clipX, (int)(cmd.ClipRect.Z - cmd.ClipRect.X));
+                int clipH = Math.Min(vp.Height - clipY, (int)(cmd.ClipRect.W - cmd.ClipRect.Y));
+
+                if (clipW <= 0 || clipH <= 0)
+                    continue;
+
+                _device.ScissorRectangle = new Microsoft.Xna.Framework.Rectangle(clipX, clipY, clipW, clipH);
+
+                IntPtr texId = cmd.TextureId;
+                Texture2D? currentTex = _fontTexture;
+                if (texId != IntPtr.Zero && texId != (IntPtr)1 &&
+                    TextureById.TryGetValue(texId, out var customTex) && customTex is { IsDisposed: false })
+                    currentTex = customTex;
+
+                _device.Textures[0] = currentTex;
+                if (_effect is not null)
+                {
+                    _effect.Texture = currentTex;
+                    foreach (var pass in _effect.CurrentTechnique.Passes)
+                    {
+                        pass.Apply();
+                        _device.DrawIndexedPrimitives(
+                            PrimitiveType.TriangleList,
+                            0,
+                            0,
+                            vtxOffset + cmdList.VtxBuffer.Size,
+                            (int)cmd.IdxOffset + idxOffset,
+                            (int)cmd.ElemCount / 3
+                        );
+                    }
+                }
+            }
+
+            vtxOffset += cmdList.VtxBuffer.Size;
+            idxOffset += cmdList.IdxBuffer.Size;
+        }
     }
 
     private void UpdateInput(ImGuiIOPtr io)
     {
         var mouse = Mouse.GetState();
-        io.AddMousePosEvent(mouse.X, mouse.Y);
+        var scale = PlayerInput.RawMouseScale;
+        io.AddMousePosEvent(mouse.X * scale.X, mouse.Y * scale.Y);
         io.AddMouseButtonEvent(0, mouse.LeftButton == ButtonState.Pressed);
         io.AddMouseButtonEvent(1, mouse.RightButton == ButtonState.Pressed);
         io.AddMouseButtonEvent(2, mouse.MiddleButton == ButtonState.Pressed);
@@ -185,55 +274,30 @@ public sealed class ImGuiBackend : IDisposable
         _scroll = mouse.ScrollWheelValue;
 
         var kb = Keyboard.GetState();
-        foreach (Keys key in Enum.GetValues(typeof(Keys)))
-        {
-            if (TryMap(key, out var mapped))
-                io.AddKeyEvent(mapped, kb.IsKeyDown(key));
-        }
+        AddKey(io, kb, Keys.Tab, ImGuiKey.Tab);
+        AddKey(io, kb, Keys.Left, ImGuiKey.LeftArrow);
+        AddKey(io, kb, Keys.Right, ImGuiKey.RightArrow);
+        AddKey(io, kb, Keys.Up, ImGuiKey.UpArrow);
+        AddKey(io, kb, Keys.Down, ImGuiKey.DownArrow);
+        AddKey(io, kb, Keys.Home, ImGuiKey.Home);
+        AddKey(io, kb, Keys.End, ImGuiKey.End);
+        AddKey(io, kb, Keys.Delete, ImGuiKey.Delete);
+        AddKey(io, kb, Keys.Back, ImGuiKey.Backspace);
+        AddKey(io, kb, Keys.Enter, ImGuiKey.Enter);
+        AddKey(io, kb, Keys.Escape, ImGuiKey.Escape);
+        AddKey(io, kb, Keys.Space, ImGuiKey.Space);
+        for (int i = 0; i < 26; i++)
+            AddKey(io, kb, Keys.A + i, ImGuiKey.A + i);
+        for (int i = 0; i < 10; i++)
+            AddKey(io, kb, Keys.D0 + i, ImGuiKey._0 + i);
 
         io.AddKeyEvent(ImGuiKey.ModCtrl, kb.IsKeyDown(Keys.LeftControl) || kb.IsKeyDown(Keys.RightControl));
         io.AddKeyEvent(ImGuiKey.ModShift, kb.IsKeyDown(Keys.LeftShift) || kb.IsKeyDown(Keys.RightShift));
         io.AddKeyEvent(ImGuiKey.ModAlt, kb.IsKeyDown(Keys.LeftAlt) || kb.IsKeyDown(Keys.RightAlt));
     }
 
-    private static bool TryMap(Keys key, out ImGuiKey mapped)
-    {
-        mapped = key switch
-        {
-            Keys.Tab => ImGuiKey.Tab,
-            Keys.Left => ImGuiKey.LeftArrow,
-            Keys.Right => ImGuiKey.RightArrow,
-            Keys.Up => ImGuiKey.UpArrow,
-            Keys.Down => ImGuiKey.DownArrow,
-            Keys.Home => ImGuiKey.Home,
-            Keys.End => ImGuiKey.End,
-            Keys.Delete => ImGuiKey.Delete,
-            Keys.Back => ImGuiKey.Backspace,
-            Keys.Enter => ImGuiKey.Enter,
-            Keys.Escape => ImGuiKey.Escape,
-            Keys.Space => ImGuiKey.Space,
-            Keys.A => ImGuiKey.A,
-            Keys.C => ImGuiKey.C,
-            Keys.V => ImGuiKey.V,
-            Keys.X => ImGuiKey.X,
-            Keys.Y => ImGuiKey.Y,
-            Keys.Z => ImGuiKey.Z,
-            _ => ImGuiKey.None,
-        };
-        if (key is >= Keys.A and <= Keys.Z)
-        {
-            mapped = ImGuiKey.A + (key - Keys.A);
-            return true;
-        }
-
-        if (key is >= Keys.D0 and <= Keys.D9)
-        {
-            mapped = ImGuiKey._0 + (key - Keys.D0);
-            return true;
-        }
-
-        return mapped != ImGuiKey.None;
-    }
+    private static void AddKey(ImGuiIOPtr io, KeyboardState kb, Keys key, ImGuiKey mapped)
+        => io.AddKeyEvent(mapped, kb.IsKeyDown(key));
 
     private void AttachInput()
     {
@@ -241,27 +305,37 @@ public sealed class ImGuiBackend : IDisposable
         if (handle == IntPtr.Zero)
             return;
         _wndProc = Hook;
-        _prevWndProc = SetWindowLong(handle, GwlWndProc, Marshal.GetFunctionPointerForDelegate(_wndProc));
+        _prevWndProc = SetWindowLong(handle, -4, Marshal.GetFunctionPointerForDelegate(_wndProc));
     }
 
     private void DetachInput()
     {
         var handle = Main.instance.Window.Handle;
         if (handle != IntPtr.Zero && _prevWndProc != IntPtr.Zero)
-            SetWindowLong(handle, GwlWndProc, _prevWndProc);
+            SetWindowLong(handle, -4, _prevWndProc);
         _wndProc = null;
     }
 
     private IntPtr Hook(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
-        if (msg == WmChar)
+        if (msg is 0x0102 or 0x0109 or 0x0286)
         {
-            int ch = wParam.ToInt32();
+            int ch = wParam.ToInt32() & 0xFFFF;
             if (ch >= 32)
                 ImGui.GetIO().AddInputCharacter((uint)ch);
         }
 
         return CallWindowProc(_prevWndProc, hWnd, msg, wParam, lParam);
+    }
+
+    public void Dispose()
+    {
+        DetachInput();
+        _fontTexture?.Dispose();
+        _vertexBuffer?.Dispose();
+        _indexBuffer?.Dispose();
+        _effect?.Dispose();
+        _rasterizer.Dispose();
     }
 
     [DllImport("user32.dll", EntryPoint = "SetWindowLong")]

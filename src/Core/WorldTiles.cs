@@ -1,3 +1,4 @@
+using System;
 using Hakoniwa.Engine.Data;
 using Terraria;
 
@@ -71,8 +72,34 @@ public sealed class WorldTiles : ITileGrid
 
     public static void Refresh(int x, int y, int width, int height)
     {
-        if (width <= 0 || height <= 0)
+        if (width <= 0 || height <= 0 || Main.tile is null)
             return;
-        WorldGen.RangeFrame(x, y, x + width, y + height);
+
+        int x1 = Math.Max(0, x);
+        int y1 = Math.Max(0, y);
+        int x2 = Math.Min(Main.maxTilesX, x + width);
+        int y2 = Math.Min(Main.maxTilesY, y + height);
+        if (x1 >= x2 || y1 >= y2)
+            return;
+
+        WorldGen.RangeFrame(
+            Math.Max(0, x1 - 1),
+            Math.Max(0, y1 - 1),
+            Math.Min(Main.maxTilesX, x2 + 1),
+            Math.Min(Main.maxTilesY, y2 + 1));
+
+        if (Main.netMode == 0)
+            return;
+
+        const int chunk = 32;
+        for (int cx = x1; cx < x2; cx += chunk)
+        {
+            int cw = Math.Min(chunk, x2 - cx);
+            for (int cy = y1; cy < y2; cy += chunk)
+            {
+                int ch = Math.Min(chunk, y2 - cy);
+                NetMessage.SendTileSquare(-1, cx, cy, cw, ch);
+            }
+        }
     }
 }

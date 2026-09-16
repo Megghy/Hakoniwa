@@ -67,9 +67,17 @@ public static class EditorSession
         Clipboard = TransformEngine.Rotate90Clockwise(Clipboard);
     }
 
-    public static void Undo() => History.Undo(WorldTiles.Instance);
+    public static void Undo()
+    {
+        if (History.Undo(WorldTiles.Instance, out int x, out int y, out int w, out int h))
+            WorldTiles.Refresh(x, y, w, h);
+    }
 
-    public static void Redo() => History.Redo(WorldTiles.Instance);
+    public static void Redo()
+    {
+        if (History.Redo(WorldTiles.Instance, out int x, out int y, out int w, out int h))
+            WorldTiles.Refresh(x, y, w, h);
+    }
 
     public static void ApplyToolAtCursor()
     {
@@ -84,8 +92,9 @@ public static class EditorSession
                 WorldTiles.Refresh(x - BrushRadius, y - BrushRadius, BrushRadius * 2 + 1, BrushRadius * 2 + 1);
                 break;
             case 1:
-                ToolEngine.FloodFill(WorldTiles.Instance, x, y, StampFromHeld(), TileLayer.All, History);
-                WorldTiles.Refresh(x - 32, y - 32, 65, 65);
+                if (ToolEngine.FloodFill(WorldTiles.Instance, x, y, StampFromHeld(), TileLayer.All, History) > 0 &&
+                    History.TryGetLastBounds(out int fx, out int fy, out int fw, out int fh))
+                    WorldTiles.Refresh(fx, fy, fw, fh);
                 break;
             case 2:
                 ToolEngine.Erase(WorldTiles.Instance, x, y, BrushRadius, BrushShape, TileLayer.All, History);

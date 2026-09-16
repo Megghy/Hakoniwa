@@ -68,10 +68,13 @@ public sealed class HistoryStack
         _count++;
     }
 
-    public bool Undo(ITileGrid world)
+    public bool Undo(ITileGrid world) => Undo(world, out _, out _, out _, out _);
+
+    public bool Undo(ITileGrid world, out int x, out int y, out int width, out int height)
     {
         if (world is null)
             throw new ArgumentNullException(nameof(world));
+        x = y = width = height = 0;
         if (!CanUndo)
             return false;
 
@@ -80,13 +83,17 @@ public sealed class HistoryStack
             world.Set(changes[i].X, changes[i].Y, changes[i].Before);
 
         _redoDepth++;
+        Bounds(changes, out x, out y, out width, out height);
         return true;
     }
 
-    public bool Redo(ITileGrid world)
+    public bool Redo(ITileGrid world) => Redo(world, out _, out _, out _, out _);
+
+    public bool Redo(ITileGrid world, out int x, out int y, out int width, out int height)
     {
         if (world is null)
             throw new ArgumentNullException(nameof(world));
+        x = y = width = height = 0;
         if (!CanRedo)
             return false;
 
@@ -95,6 +102,38 @@ public sealed class HistoryStack
             world.Set(changes[i].X, changes[i].Y, changes[i].After);
 
         _redoDepth--;
+        Bounds(changes, out x, out y, out width, out height);
         return true;
+    }
+
+    public bool TryGetLastBounds(out int x, out int y, out int width, out int height)
+    {
+        x = y = width = height = 0;
+        if (Count <= 0)
+            return false;
+        Bounds(_slots[(_oldest + Count - 1) % _slots.Length], out x, out y, out width, out height);
+        return true;
+    }
+
+    private static void Bounds(TileChange[] changes, out int x, out int y, out int width, out int height)
+    {
+        int minX = int.MaxValue;
+        int minY = int.MaxValue;
+        int maxX = int.MinValue;
+        int maxY = int.MinValue;
+        for (int i = 0; i < changes.Length; i++)
+        {
+            int cx = changes[i].X;
+            int cy = changes[i].Y;
+            if (cx < minX) minX = cx;
+            if (cy < minY) minY = cy;
+            if (cx > maxX) maxX = cx;
+            if (cy > maxY) maxY = cy;
+        }
+
+        x = minX;
+        y = minY;
+        width = maxX - minX + 1;
+        height = maxY - minY + 1;
     }
 }
