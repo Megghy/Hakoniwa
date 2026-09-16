@@ -51,19 +51,34 @@ public sealed class WorldTiles : ITileGrid
             throw new System.ArgumentOutOfRangeException(nameof(x), $"({x},{y}) is outside the world.");
 
         var tile = Main.tile[x, y] ?? (Main.tile[x, y] = new Tile());
-        tile.type = block.TileType;
+        if (block.HasTile)
+        {
+            tile.type = block.TileType;
+            tile.active(true);
+            tile.frameX = block.TileFrameX;
+            tile.frameY = block.TileFrameY;
+            tile.halfBrick(block.IsHalfBlock);
+            tile.actuator(block.HasActuator);
+            tile.inActive(block.IsActuated);
+            tile.slope(block.Slope);
+        }
+        else
+        {
+            tile.active(false);
+            tile.type = 0;
+            tile.frameX = 0;
+            tile.frameY = 0;
+            tile.halfBrick(false);
+            tile.actuator(false);
+            tile.inActive(false);
+            tile.slope(0);
+        }
+
         tile.wall = block.WallType;
-        tile.frameX = block.TileFrameX;
-        tile.frameY = block.TileFrameY;
         tile.liquid = block.Liquid;
         tile.liquidType(block.LiquidType);
         tile.color(block.Color);
         tile.wallColor(block.WallColor);
-        tile.active(block.HasTile);
-        tile.halfBrick(block.IsHalfBlock);
-        tile.actuator(block.HasActuator);
-        tile.inActive(block.IsActuated);
-        tile.slope(block.Slope);
         tile.wire(block.RedWire);
         tile.wire2(block.BlueWire);
         tile.wire3(block.GreenWire);
@@ -82,11 +97,15 @@ public sealed class WorldTiles : ITileGrid
         if (x1 >= x2 || y1 >= y2)
             return;
 
-        WorldGen.RangeFrame(
-            Math.Max(0, x1 - 1),
-            Math.Max(0, y1 - 1),
-            Math.Min(Main.maxTilesX, x2 + 1),
-            Math.Min(Main.maxTilesY, y2 + 1));
+        int fx1 = Math.Max(1, x1);
+        int fy1 = Math.Max(1, y1);
+        int fx2 = Math.Min(Main.maxTilesX - 1, x2);
+        int fy2 = Math.Min(Main.maxTilesY - 1, y2);
+        for (int i = fx1; i < fx2; i++)
+        {
+            for (int j = fy1; j < fy2; j++)
+                WorldGen.Reframe(i, j);
+        }
 
         if (Main.netMode == 0)
             return;

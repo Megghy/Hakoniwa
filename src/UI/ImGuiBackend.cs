@@ -17,13 +17,14 @@ namespace Hakoniwa.UI;
 /// </summary>
 public sealed class ImGuiBackend : IDisposable
 {
-    private readonly GraphicsDevice _device;
+    private GraphicsDevice? _device;
     private BasicEffect? _effect;
     private Texture2D? _fontTexture;
     private VertexBuffer? _vertexBuffer;
     private IndexBuffer? _indexBuffer;
     private int _vertexBufferSize;
     private int _indexBufferSize;
+    private bool _texturesDirty;
     private int _scroll;
     private IntPtr _prevWndProc;
     private WndProc? _wndProc;
@@ -40,9 +41,12 @@ public sealed class ImGuiBackend : IDisposable
     private static readonly Dictionary<Texture2D, IntPtr> IdByTexture = [];
     private static int _nextTexId = 2;
 
+    public static ImFontPtr IconFont { get; private set; }
+
     public ImGuiBackend(GraphicsDevice device)
     {
-        _device = device ?? throw new ArgumentNullException(nameof(device));
+        if (device is null)
+            throw new ArgumentNullException(nameof(device));
         var context = ImGui.CreateContext();
         ImGui.SetCurrentContext(context);
 
@@ -54,8 +58,37 @@ public sealed class ImGuiBackend : IDisposable
 
         Themes.HakoniwaTheme.Apply();
         BuildFont();
-        InitGraphics();
         AttachInput();
+        if (!BindDevice())
+            throw new InvalidOperationException("GraphicsDevice is not available.");
+    }
+
+    private bool BindDevice()
+    {
+        var device = Main.instance.GraphicsDevice;
+        if (device is null || device.IsDisposed)
+            return false;
+        if (ReferenceEquals(_device, device))
+            return true;
+
+        if (_effect is { IsDisposed: false })
+            _effect.Dispose();
+        if (_vertexBuffer is { IsDisposed: false })
+            _vertexBuffer.Dispose();
+        if (_indexBuffer is { IsDisposed: false })
+            _indexBuffer.Dispose();
+        _effect = null;
+        _vertexBuffer = null;
+        _indexBuffer = null;
+        _vertexBufferSize = 0;
+        _indexBufferSize = 0;
+        TextureById.Clear();
+        IdByTexture.Clear();
+        _fontTexture = null;
+        _device = device;
+        InitGraphics();
+        _texturesDirty = true;
+        return true;
     }
 
     public static IntPtr GetTextureId(Texture2D? texture)
@@ -72,28 +105,33 @@ public sealed class ImGuiBackend : IDisposable
         return newId;
     }
 
-    public void NewFrame()
+    public bool NewFrame()
     {
+        if (!BindDevice())
+            return false;
         var io = ImGui.GetIO();
-        var pp = _device.PresentationParameters;
+        var pp = _device!.PresentationParameters;
         io.DisplaySize = new Num.Vector2(pp.BackBufferWidth, pp.BackBufferHeight);
         io.DisplayFramebufferScale = Num.Vector2.One;
         io.DeltaTime = Math.Max(1f / 60f, (float)Main.gameTimeCache.ElapsedGameTime.TotalSeconds);
         UpdateInput(io);
         ImGui.NewFrame();
+        return true;
     }
 
-    public void Render()
+    public void Render(bool extraCursor = false)
     {
+        if (!BindDevice())
+            return;
         var io = ImGui.GetIO();
-        io.MouseDrawCursor = io.WantCaptureMouse;
+        io.MouseDrawCursor = io.WantCaptureMouse || extraCursor;
         ImGui.Render();
         var drawData = ImGui.GetDrawData();
         SyncTextures(drawData);
         if (drawData.CmdListsCount == 0)
             return;
 
-        var oldViewport = _device.Viewport;
+        var oldViewport = _device!.Viewport;
         UpdateBuffers(drawData);
         SetupRenderState();
         RenderCommandLists(drawData);
@@ -119,12 +157,38 @@ public sealed class ImGuiBackend : IDisposable
         else
             io.Fonts.AddFontDefault(cfg);
 
+        string iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Fonts", "pixelart-icons-font.ttf");
+        if (File.Exists(iconPath))
+        {
+            var iconCfg = ImGui.ImFontConfig();
+            iconCfg.OversampleH = 1;
+            iconCfg.OversampleV = 1;
+            iconCfg.PixelSnapH = true;
+            iconCfg.GlyphMinAdvanceX = 24;
+            fixed (uint* ranges = Icons.GlyphRange)
+                IconFont = io.Fonts.AddFontFromFileTTF(iconPath, 24f, iconCfg, ranges);
+            ImGui.Destroy(iconCfg);
+        }
+
         ImGui.Destroy(cfg);
     }
 
     private void SyncTextures(ImDrawDataPtr drawData)
     {
         var textures = drawData.Textures;
+        if (_texturesDirty)
+        {
+            for (int i = 0; i < textures.Size; i++)
+            {
+                var tex = textures[i];
+                if (tex.IsNull || tex.Status == ImTextureStatus.Destroyed)
+                    continue;
+                tex.SetTexID(default);
+                tex.SetStatus(ImTextureStatus.WantCreate);
+            }
+            _texturesDirty = false;
+        }
+
         for (int i = 0; i < textures.Size; i++)
             ApplyTexture(textures[i]);
     }
@@ -266,12 +330,13 @@ public sealed class ImGuiBackend : IDisposable
 
     private void SetupRenderState()
     {
-        var pp = _device.PresentationParameters;
-        _device.Viewport = new Viewport(0, 0, pp.BackBufferWidth, pp.BackBufferHeight);
-        _device.RasterizerState = _rasterizer;
-        _device.BlendState = BlendState.NonPremultiplied;
-        _device.DepthStencilState = DepthStencilState.None;
-        _device.SamplerStates[0] = SamplerState.PointClamp;
+        var device = _device!;
+        var pp = device.PresentationParameters;
+        device.Viewport = new Viewport(0, 0, pp.BackBufferWidth, pp.BackBufferHeight);
+        device.RasterizerState = _rasterizer;
+        device.BlendState = BlendState.NonPremultiplied;
+        device.DepthStencilState = DepthStencilState.None;
+        device.SamplerStates[0] = SamplerState.PointClamp;
 
         if (_effect is not null)
         {
@@ -283,9 +348,10 @@ public sealed class ImGuiBackend : IDisposable
 
     private void RenderCommandLists(ImDrawDataPtr drawData)
     {
-        var vp = _device.Viewport;
-        _device.SetVertexBuffer(_vertexBuffer);
-        _device.Indices = _indexBuffer;
+        var device = _device!;
+        var vp = device.Viewport;
+        device.SetVertexBuffer(_vertexBuffer);
+        device.Indices = _indexBuffer;
 
         int vtxOffset = 0;
         int idxOffset = 0;
@@ -306,21 +372,21 @@ public sealed class ImGuiBackend : IDisposable
                 if (clipW <= 0 || clipH <= 0)
                     continue;
 
-                _device.ScissorRectangle = new Microsoft.Xna.Framework.Rectangle(clipX, clipY, clipW, clipH);
+                device.ScissorRectangle = new Microsoft.Xna.Framework.Rectangle(clipX, clipY, clipW, clipH);
 
                 IntPtr texId = cmd.GetTexID();
                 Texture2D? currentTex = _fontTexture;
                 if (texId != IntPtr.Zero && TextureById.TryGetValue(texId, out var customTex) && customTex is { IsDisposed: false })
                     currentTex = customTex;
 
-                _device.Textures[0] = currentTex;
+                device.Textures[0] = currentTex;
                 if (_effect is not null)
                 {
                     _effect.Texture = currentTex;
                     foreach (var pass in _effect.CurrentTechnique.Passes)
                     {
                         pass.Apply();
-                        _device.DrawIndexedPrimitives(
+                        device.DrawIndexedPrimitives(
                             PrimitiveType.TriangleList,
                             0,
                             0,

@@ -2,17 +2,15 @@ using System;
 using System.Numerics;
 using Hexa.NET.ImGui;
 using Terraria;
-using Terraria.ID;
 
 namespace Hakoniwa.UI.Windows;
 
 /// <summary>
 /// 现代化 ImGui 标牌编辑器 (多行编辑、撤销重做、富文本复制粘贴)
 /// </summary>
-public sealed class SignEditorWindow : IWindow
+public sealed class SignEditorWindow
 {
     public string Title => "标牌编辑 (Sign Editor)###HakoniwaSignEditor";
-    public string Label => "标牌";
     public bool IsOpen { get; set; }
 
     private string _textBuffer = string.Empty;
@@ -56,9 +54,7 @@ public sealed class SignEditorWindow : IWindow
         bool open = IsOpen;
         if (ImGui.Begin(Title, ref open, ImGuiWindowFlags.NoCollapse))
         {
-            UiIcons.DrawItem(ItemID.Sign, 22f);
-            ImGui.SameLine();
-            ImGui.TextColored(new Vector4(0.55f, 0.75f, 1f, 1f), "编辑标牌内容 (支持换行与快捷键):");
+            Ui.Heading(Icons.Script, "编辑标牌内容 (支持换行与快捷键)");
 
             ImGui.InputTextMultiline("##sign_text_input", ref _textBuffer, (UIntPtr)2048, new Vector2(-1, 200f));
 

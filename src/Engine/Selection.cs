@@ -1,3 +1,5 @@
+using Hakoniwa.Engine.Tools;
+
 namespace Hakoniwa.Engine;
 
 public sealed class Selection
@@ -7,6 +9,7 @@ public sealed class Selection
     public int StartY { get; set; }
     public int EndX { get; set; }
     public int EndY { get; set; }
+    public BrushShape Shape { get; set; } = BrushShape.Square;
 
     public int MinX => StartX < EndX ? StartX : EndX;
     public int MinY => StartY < EndY ? StartY : EndY;
@@ -15,10 +18,11 @@ public sealed class Selection
     public int Width => Active ? MaxX - MinX + 1 : 0;
     public int Height => Active ? MaxY - MinY + 1 : 0;
 
-    public void Begin(int x, int y)
+    public void Begin(int x, int y, BrushShape shape = BrushShape.Square)
     {
         StartX = EndX = x;
         StartY = EndY = y;
+        Shape = shape;
         Active = true;
     }
 
@@ -36,7 +40,7 @@ public sealed class Selection
     public void Clear() => Active = false;
 
     public bool Contains(int x, int y) =>
-        Active && x >= MinX && x <= MaxX && y >= MinY && y <= MaxY;
+        Active && ToolEngine.InRectShape(x, y, MinX, MinY, MaxX, MaxY, Shape);
 
     public void Set(int x0, int y0, int x1, int y1)
     {

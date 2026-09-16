@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Microsoft.Xna.Framework;
@@ -20,8 +21,10 @@ public static class CheatHooks
 
     private static ILightingEngine? _vanillaLighting;
     private static bool _fullBrightApplied;
-    private static readonly TimeSpan LogicTick = TimeSpan.FromTicks(TimeSpan.TicksPerSecond / 60);
-    private static TimeSpan _logicDebt;
+    private static readonly Stopwatch LogicClock = Stopwatch.StartNew();
+    private static long _nextLogicTick;
+    private static bool _prepHooked;
+    private static bool _fpsApplied;
     private const BindingFlags Flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
 
     public static void Install(HookManager hooks)
@@ -138,23 +141,30 @@ public static class CheatHooks
         if (!CheatState.UnlockFps)
         {
             RunLogic(orig, self, time);
-            RestoreFpsCap(self);
+            if (_fpsApplied)
+                CapTo(self, 60);
             return;
         }
 
-        UnlockFps(self);
-        _logicDebt += time.ElapsedGameTime;
-        if (_logicDebt.Ticks > LogicTick.Ticks * 3)
-            _logicDebt = TimeSpan.FromTicks(LogicTick.Ticks * 3);
-        if (_logicDebt < LogicTick)
+        CapTo(self, RefreshHz());
+        long now = LogicClock.ElapsedTicks;
+        long step = Stopwatch.Frequency / 60;
+        if (_nextLogicTick == 0)
+            _nextLogicTick = now;
+        if (now < _nextLogicTick)
             return;
 
-        while (_logicDebt >= LogicTick)
+        int runs = 0;
+        while (now >= _nextLogicTick && runs < 3)
         {
-            _logicDebt -= LogicTick;
-            RunLogic(orig, self, new GameTime(time.TotalGameTime, LogicTick));
-            UnlockFps(self);
+            _nextLogicTick += step;
+            RunLogic(orig, self, time);
+            CapTo(self, RefreshHz());
+            runs++;
         }
+
+        if (runs == 3)
+            _nextLogicTick = now + step;
     }
 
     private static void RunLogic(Action<Main, GameTime> orig, Main self, GameTime time)
@@ -167,21 +177,40 @@ public static class CheatHooks
         PostUpdate?.Invoke();
     }
 
-    private static void UnlockFps(Main self)
+    public static void ApplyFpsUnlock()
     {
-        self.IsFixedTimeStep = false;
-        var graphics = Main.graphics;
-        graphics.SynchronizeWithVerticalRetrace = false;
-        if (self.GraphicsDevice.PresentationParameters.PresentationInterval != PresentInterval.Immediate)
-            graphics.ApplyChanges();
+        if (_prepHooked || Main.graphics is null)
+            return;
+        _prepHooked = true;
+        Main.graphics.PreparingDeviceSettings += (_, e) =>
+        {
+            if (CheatState.UnlockFps)
+                e.GraphicsDeviceInformation.PresentationParameters.PresentationInterval = PresentInterval.Immediate;
+        };
+        if (_fpsApplied || !CheatState.UnlockFps)
+            return;
+        var device = Main.instance.GraphicsDevice;
+        if (device is null || device.IsDisposed)
+            return;
+        _fpsApplied = true;
+        if (device.PresentationParameters.PresentationInterval == PresentInterval.Immediate)
+            return;
+        Main.graphics.ApplyChanges();
+        Main.instance.InitTargets();
     }
 
-    private static void RestoreFpsCap(Main self)
+    private static void CapTo(Main self, int hz)
     {
-        if (self.GraphicsDevice.PresentationParameters.PresentationInterval != PresentInterval.Immediate)
-            return;
-        Main.graphics.SynchronizeWithVerticalRetrace = true;
-        Main.graphics.ApplyChanges();
+        self.IsFixedTimeStep = true;
+        self.TargetElapsedTime = TimeSpan.FromTicks(TimeSpan.TicksPerSecond / hz);
+    }
+
+    private static int RefreshHz()
+    {
+        IntPtr dc = GetDC(IntPtr.Zero);
+        int hz = GetDeviceCaps(dc, 116);
+        ReleaseDC(IntPtr.Zero, dc);
+        return hz < 30 ? 60 : hz;
     }
 
     private static void UpdateInput(Action orig)
@@ -273,4 +302,13 @@ public static class CheatHooks
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern bool SetWindowText(IntPtr hWnd, string lpString);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetDC(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern int ReleaseDC(IntPtr hwnd, IntPtr hdc);
+
+    [DllImport("gdi32.dll")]
+    private static extern int GetDeviceCaps(IntPtr hdc, int index);
 }

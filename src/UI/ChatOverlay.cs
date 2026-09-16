@@ -100,13 +100,7 @@ public sealed class ChatOverlay
         // 绘制底部主聊天条
         ImGui.SetNextWindowPos(new Vector2(posX, posY));
         ImGui.SetNextWindowSize(new Vector2(width, 42f));
-        var flags = ImGuiWindowFlags.NoTitleBar |
-                    ImGuiWindowFlags.NoResize |
-                    ImGuiWindowFlags.NoMove |
-                    ImGuiWindowFlags.NoScrollbar |
-                    ImGuiWindowFlags.NoSavedSettings;
-
-        if (ImGui.Begin("##HakoniwaChatInputBar", flags))
+        if (ImGui.Begin("##HakoniwaChatInputBar", Ui.Overlay | ImGuiWindowFlags.NoMove))
         {
             ImGui.AlignTextToFramePadding();
             ImGui.TextColored(new Vector4(0.35f, 0.78f, 0.98f, 1f), "说:");
@@ -146,12 +140,7 @@ public sealed class ChatOverlay
         ImGui.SetNextWindowPos(new Vector2(anchor.X, anchor.Y - popupHeight - 6f));
         ImGui.SetNextWindowSize(new Vector2(width, popupHeight));
 
-        var flags = ImGuiWindowFlags.NoTitleBar |
-                    ImGuiWindowFlags.NoResize |
-                    ImGuiWindowFlags.NoMove |
-                    ImGuiWindowFlags.NoFocusOnAppearing;
-
-        if (ImGui.Begin("##ChatAutocompletePopup", flags))
+        if (ImGui.Begin("##ChatAutocompletePopup", Ui.Overlay | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoFocusOnAppearing))
         {
             for (int i = 0; i < _matchedCandidates.Count; i++)
             {

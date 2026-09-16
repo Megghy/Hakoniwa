@@ -81,6 +81,41 @@ public sealed class ToolEngineTests
     }
 
     [Fact]
+    public void Extract_ClipsToWorldAndSkipHonored()
+    {
+        var world = new TileAccessor(4, 4);
+        ToolEngine.Paint(world, 0, 0, 0, BrushShape.Square, Stone(8));
+        var schematic = ToolEngine.Extract(world, -2, -2, 4, 4);
+        Assert.Equal(2, schematic.Width);
+        Assert.Equal(2, schematic.Height);
+        schematic[1, 1].Skip = true;
+        var dest = new TileAccessor(4, 4);
+        Assert.Equal(1, ToolEngine.Paste(dest, schematic, 0, 0));
+        Assert.Equal(8, dest.Get(0, 0).TileType);
+        Assert.Equal(0, dest.Get(1, 1).TileType);
+    }
+
+    [Fact]
+    public void Relocate_CutsSourceAndPastesDest()
+    {
+        var world = new TileAccessor(6, 6);
+        ToolEngine.Paint(world, 1, 1, 0, BrushShape.Square, Stone(5));
+        var schematic = ToolEngine.Extract(world, 1, 1, 1, 1);
+        Assert.Equal(2, ToolEngine.Relocate(world, schematic, 1, 1, 4, 4, cut: true));
+        Assert.False(world.Get(1, 1).HasTile);
+        Assert.Equal(5, world.Get(4, 4).TileType);
+    }
+
+    [Fact]
+    public void InRectShape_CircleAndDiamond()
+    {
+        Assert.True(ToolEngine.InRectShape(2, 2, 0, 0, 4, 4, BrushShape.Circle));
+        Assert.False(ToolEngine.InRectShape(0, 0, 0, 0, 4, 4, BrushShape.Circle));
+        Assert.True(ToolEngine.InRectShape(2, 0, 0, 0, 4, 4, BrushShape.Diamond));
+        Assert.False(ToolEngine.InRectShape(0, 0, 0, 0, 4, 4, BrushShape.Diamond));
+    }
+
+    [Fact]
     public void History_UndoRedoAndCapacityDrop()
     {
         var world = new TileAccessor(8, 8);
@@ -121,6 +156,10 @@ public sealed class ToolEngineTests
         Assert.Equal(5, selection.Height);
         selection.Clear();
         Assert.False(selection.Active);
+        selection.Begin(2, 2, BrushShape.Circle);
+        selection.DragTo(6, 6);
+        Assert.True(selection.Contains(4, 4));
+        Assert.False(selection.Contains(2, 2));
     }
 
     private static TileDataBlock Stone(ushort type)

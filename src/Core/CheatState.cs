@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using Microsoft.Xna.Framework.Input;
@@ -21,6 +22,12 @@ public static class CheatState
     public static bool WaitingSelectKey;
     public static NotifyCorner NotifyAnchor = NotifyCorner.右下;
     public static float NotifyScale = 1f;
+    public static float? ToolbarX;
+    public static float? ToolbarY;
+    public static float? BallY;
+    public static bool? BallRight;
+    public static readonly HashSet<int> Favorites = [];
+    public static int FavRev;
 
     private static string? _saved;
 
@@ -60,6 +67,16 @@ public static class CheatState
         NotifyAnchor = (NotifyCorner)data.NotifyAnchor;
         if (data.NotifyScale > 0f)
             NotifyScale = data.NotifyScale;
+        ToolbarX = data.ToolbarX;
+        ToolbarY = data.ToolbarY;
+        BallY = data.BallY;
+        BallRight = data.BallRight;
+        Favorites.Clear();
+        if (data.Favorites is { Length: > 0 } favs)
+        {
+            foreach (int id in favs)
+                Favorites.Add(id);
+        }
         _saved = JsonSerializer.Serialize(Capture());
     }
 
@@ -86,6 +103,11 @@ public static class CheatState
         SelectModifier = (int)SelectModifier,
         NotifyAnchor = (int)NotifyAnchor,
         NotifyScale = NotifyScale,
+        ToolbarX = ToolbarX,
+        ToolbarY = ToolbarY,
+        BallY = BallY,
+        BallRight = BallRight,
+        Favorites = SnapshotFavorites(),
     };
 
     private static string PathFor()
@@ -109,5 +131,25 @@ public static class CheatState
         public int SelectModifier { get; set; } = (int)Keys.LeftControl;
         public int NotifyAnchor { get; set; } = (int)NotifyCorner.右下;
         public float NotifyScale { get; set; } = 1f;
+        public float? ToolbarX { get; set; }
+        public float? ToolbarY { get; set; }
+        public float? BallY { get; set; }
+        public bool? BallRight { get; set; }
+        public int[]? Favorites { get; set; }
+    }
+
+    public static void ToggleFavorite(int id)
+    {
+        if (!Favorites.Add(id))
+            Favorites.Remove(id);
+        FavRev++;
+    }
+
+    private static int[] SnapshotFavorites()
+    {
+        var ids = new int[Favorites.Count];
+        Favorites.CopyTo(ids);
+        Array.Sort(ids);
+        return ids;
     }
 }

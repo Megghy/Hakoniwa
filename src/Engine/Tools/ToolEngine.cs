@@ -34,6 +34,23 @@ public static class ToolEngine
         _ => throw new ArgumentOutOfRangeException(nameof(shape), shape, "Unknown brush shape."),
     };
 
+    public static bool InRectShape(int x, int y, int minX, int minY, int maxX, int maxY, BrushShape shape)
+    {
+        if (x < minX || x > maxX || y < minY || y > maxY)
+            return false;
+        if (shape == BrushShape.Square)
+            return true;
+        float cx = (minX + maxX) * 0.5f;
+        float cy = (minY + maxY) * 0.5f;
+        float rx = (maxX - minX + 1) * 0.5f;
+        float ry = (maxY - minY + 1) * 0.5f;
+        float dx = (x - cx) / rx;
+        float dy = (y - cy) / ry;
+        return shape == BrushShape.Diamond
+            ? Math.Abs(dx) + Math.Abs(dy) <= 1.001f
+            : dx * dx + dy * dy <= 1.001f;
+    }
+
     public static int Paint(
         ITileGrid world,
         int cx,
@@ -143,8 +160,16 @@ public static class ToolEngine
             throw new ArgumentOutOfRangeException(nameof(width));
         if (height <= 0)
             throw new ArgumentOutOfRangeException(nameof(height));
-        if (!world.InBounds(x, y) || !world.InBounds(x + width - 1, y + height - 1))
-            throw new ArgumentOutOfRangeException(nameof(x), "Extract rectangle must lie fully inside the world.");
+        int x1 = Math.Max(0, x);
+        int y1 = Math.Max(0, y);
+        int x2 = Math.Min(world.Width - 1, x + width - 1);
+        int y2 = Math.Min(world.Height - 1, y + height - 1);
+        if (x1 > x2 || y1 > y2)
+            throw new ArgumentOutOfRangeException(nameof(x), "Extract rectangle does not overlap the world.");
+        x = x1;
+        y = y1;
+        width = x2 - x1 + 1;
+        height = y2 - y1 + 1;
 
         var schematic = new Schematic(width, height);
         for (int iy = 0; iy < height; iy++)
@@ -181,7 +206,10 @@ public static class ToolEngine
                 int wy = originY + iy - schematic.AnchorY;
                 if (!world.InBounds(wx, wy))
                     continue;
-                pasted += Apply(world, wx, wy, ApplyLayers(world.Get(wx, wy), schematic[ix, iy], layers), changes);
+                var stamp = schematic[ix, iy];
+                if (stamp.Skip)
+                    continue;
+                pasted += Apply(world, wx, wy, ApplyLayers(world.Get(wx, wy), stamp, layers), changes);
             }
         }
 
@@ -196,7 +224,8 @@ public static class ToolEngine
         int width,
         int height,
         TileLayer layers = TileLayer.All,
-        HistoryStack? history = null)
+        HistoryStack? history = null,
+        BrushShape shape = BrushShape.Square)
     {
         if (world is null)
             throw new ArgumentNullException(nameof(world));
@@ -215,7 +244,7 @@ public static class ToolEngine
             {
                 int wx = x + ix;
                 int wy = y + iy;
-                if (!world.InBounds(wx, wy))
+                if (!world.InBounds(wx, wy) || !InRectShape(wx, wy, x, y, x + width - 1, y + height - 1, shape))
                     continue;
                 cleared += Apply(world, wx, wy, ClearLayers(world.Get(wx, wy), layers), changes);
             }
@@ -223,6 +252,60 @@ public static class ToolEngine
 
         history?.Push(changes);
         return cleared;
+    }
+
+    public static int Relocate(
+        ITileGrid world,
+        Schematic schematic,
+        int srcX,
+        int srcY,
+        int dstX,
+        int dstY,
+        bool cut,
+        TileLayer layers = TileLayer.All,
+        HistoryStack? history = null)
+    {
+        if (world is null)
+            throw new ArgumentNullException(nameof(world));
+        if (schematic is null)
+            throw new ArgumentNullException(nameof(schematic));
+
+        var changes = new List<TileChange>();
+        int n = 0;
+        if (cut)
+        {
+            for (int iy = 0; iy < schematic.Height; iy++)
+            {
+                for (int ix = 0; ix < schematic.Width; ix++)
+                {
+                    if (schematic[ix, iy].Skip)
+                        continue;
+                    int wx = srcX + ix;
+                    int wy = srcY + iy;
+                    if (!world.InBounds(wx, wy))
+                        continue;
+                    n += Apply(world, wx, wy, ClearLayers(world.Get(wx, wy), layers), changes);
+                }
+            }
+        }
+
+        for (int iy = 0; iy < schematic.Height; iy++)
+        {
+            for (int ix = 0; ix < schematic.Width; ix++)
+            {
+                var stamp = schematic[ix, iy];
+                if (stamp.Skip)
+                    continue;
+                int wx = dstX + ix - schematic.AnchorX;
+                int wy = dstY + iy - schematic.AnchorY;
+                if (!world.InBounds(wx, wy))
+                    continue;
+                n += Apply(world, wx, wy, ApplyLayers(world.Get(wx, wy), stamp, layers), changes);
+            }
+        }
+
+        history?.Push(changes);
+        return n;
     }
 
     public static TileDataBlock ApplyLayers(in TileDataBlock dest, in TileDataBlock stamp, TileLayer layers)

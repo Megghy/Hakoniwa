@@ -9,33 +9,21 @@ using Hakoniwa.Engine.Tools;
 using Hexa.NET.ImGui;
 using Microsoft.Xna.Framework;
 using Terraria;
-using Terraria.ID;
 using Vector2 = System.Numerics.Vector2;
 using Vector3 = System.Numerics.Vector3;
 using Vector4 = System.Numerics.Vector4;
 
 namespace Hakoniwa.UI.Windows;
 
-public sealed class StudioWindow : IWindow
+public sealed class StudioWindow
 {
     public string Title => "箱庭工坊 (Hakoniwa Studio)###HakoniwaMainStudio";
-    public string Label => "工坊";
     public bool IsOpen { get; set; }
 
     private int _currentTab;
     private static readonly string[] Tabs = ["建造选区", "世界规则", "物品库", "角色装备", "蓝图方案", "设置"];
-    private static readonly int[] TabIcons = [ItemID.ArchitectGizmoPack, ItemID.Sundial, ItemID.Chest, ItemID.Dresser, ItemID.LaserRuler, ItemID.Cog];
-
-    // 建造选项
-    private static readonly string[] Tools = ["笔刷 (Brush)", "油漆桶 (Fill)", "橡皮擦 (Eraser)"];
-    private static readonly string[] Shapes = ["圆形 (Circle)", "方形 (Square)", "菱形 (Diamond)"];
-
-    // 物品库搜索状态
-    private string _itemSearch = string.Empty;
-    private int _itemCategory;
-    private readonly List<int> _itemHits = [];
-    private string _lastItemQuery = "\0";
-    private static readonly string[] ItemCategories = ["全部", "工具/武器", "防具", "时装", "染料", "全部物块"];
+    private static readonly string[] TabIcons = [Icons.Crop, Icons.Earth, Icons.Box, Icons.Human, Icons.Script, Icons.Settings];
+    private readonly ItemPicker _items = new();
 
     // 蓝图库状态
     public List<Schematic> SchemLibrary { get; } = [];
@@ -65,7 +53,7 @@ public sealed class StudioWindow : IWindow
                     DrawWorldTab();
                     break;
                 case 2:
-                    DrawItemsTab();
+                    _items.Draw();
                     break;
                 case 3:
                     DrawCharacterTab();
@@ -98,11 +86,11 @@ public sealed class StudioWindow : IWindow
             if (active)
                 ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.42f, 0.28f, 0.68f, 1f));
 
-            if (ImGui.Button($"    {Tabs[i]}##tab_{i}", new Vector2(width, 32f)))
+            if (ImGui.Button($"      {Tabs[i]}##tab_{i}", new Vector2(width, 36f)))
                 _currentTab = i;
 
             var min = ImGui.GetItemRectMin();
-            UiIcons.DrawItemDirect(ImGui.GetWindowDrawList(), min + new Vector2(16f, 16f), TabIcons[i], 18f);
+            Icons.DrawDirect(ImGui.GetWindowDrawList(), min + new Vector2(16f, 18f), TabIcons[i]);
 
             if (active)
                 ImGui.PopStyleColor();
@@ -114,10 +102,8 @@ public sealed class StudioWindow : IWindow
         ImGui.BeginChild("build-scroll", new Vector2(0, 0), ImGuiChildFlags.None);
 
         // 选区信息与操作组
-        Ui.Heading(ItemID.LaserRuler, "选区与几何变换 (Selection & Transform)");
+        Ui.Heading(Icons.Crop, "选区与几何变换 (Selection & Transform)");
         var sel = EditorSession.Selection;
-        if (EditorSession.SelectedTool > 2)
-            EditorSession.SelectedTool = 0;
         string selInfo = sel.Active
             ? $"当前选区: 起点 ({sel.MinX}, {sel.MinY})  尺寸: {sel.Width} x {sel.Height}"
             : $"当前无活动选区 (按住 {CheatState.SelectModifier} 左键拖选)";
@@ -149,11 +135,17 @@ public sealed class StudioWindow : IWindow
         ImGui.Spacing();
 
         // 笔刷配置
-        Ui.Heading(ItemID.Paintbrush, "笔刷设置 (Brush & Tools)");
-        ImGui.Combo("当前工具", ref EditorSession.SelectedTool, Tools, Tools.Length);
+        Ui.Heading(Icons.Brush, "笔刷设置 (Brush & Tools)");
+        int tool = (int)EditorSession.Tool;
+        if (ImGui.Combo("当前工具", ref tool, Ui.ToolNames, Ui.ToolNames.Length))
+            EditorSession.Tool = (EditorTool)tool;
+
+        int selShape = (int)EditorSession.SelectionShape;
+        if (ImGui.Combo("选区形态", ref selShape, Ui.ShapeNames, Ui.ShapeNames.Length))
+            EditorSession.SelectionShape = (BrushShape)selShape;
 
         int shape = (int)EditorSession.BrushShape;
-        if (ImGui.Combo("笔刷形状", ref shape, Shapes, Shapes.Length))
+        if (ImGui.Combo("笔刷形状", ref shape, Ui.ShapeNames, Ui.ShapeNames.Length))
             EditorSession.BrushShape = (BrushShape)shape;
 
         ImGui.SliderInt("笔刷半径", ref EditorSession.BrushRadius, 0, 50);
@@ -165,7 +157,7 @@ public sealed class StudioWindow : IWindow
     {
         ImGui.BeginChild("world-scroll", new Vector2(0, 0), ImGuiChildFlags.None);
 
-        Ui.Heading(ItemID.Sundial, "创造模式规则 (Rules)");
+        Ui.Heading(Icons.Shield, "创造模式规则 (Rules)");
         ImGui.Checkbox("上帝模式 (God Mode)", ref CheatState.GodMode);
         ImGui.SameLine(220f);
         ImGui.Checkbox("全图照明 (Full Bright)", ref CheatState.FullBright);
@@ -182,7 +174,7 @@ public sealed class StudioWindow : IWindow
         ImGui.Separator();
         ImGui.Spacing();
 
-        Ui.Heading(ItemID.FastClock, "世界时间与环境 (Time & Environment)");
+        Ui.Heading(Icons.Clock, "世界时间与环境 (Time & Environment)");
         float time = GetTimeFraction();
         if (ImGui.SliderFloat("时间进度 (0:00 - 24:00)", ref time, 0f, 1f, GetTimeString(time)))
             SetTimeFraction(time);
@@ -203,76 +195,6 @@ public sealed class StudioWindow : IWindow
         ImGui.EndChild();
     }
 
-    private void DrawItemsTab()
-    {
-        ImGui.InputText("搜索物品", ref _itemSearch, (UIntPtr)128);
-        ImGui.SameLine();
-        ImGui.Combo("分类", ref _itemCategory, ItemCategories, ItemCategories.Length);
-
-        RefreshItems();
-        ImGui.TextDisabled($"共匹配 {_itemHits.Count} 个物品 (点击直接提取到鼠标)");
-
-        ImGui.BeginChild("items-list-child", new Vector2(0, 0), ImGuiChildFlags.Borders);
-        const float rowH = 22f;
-        int first = Math.Max(0, (int)(ImGui.GetScrollY() / rowH));
-        int last = Math.Min(_itemHits.Count, first + (int)(ImGui.GetWindowHeight() / rowH) + 2);
-        if (first > 0)
-            ImGui.Dummy(new Vector2(1f, first * rowH));
-        for (int i = first; i < last; i++)
-        {
-            int id = _itemHits[i];
-            string name = Lang.GetItemNameValue(id);
-
-            ImGui.PushID(id);
-            UiIcons.DrawItem(id, 20f);
-            ImGui.SameLine();
-
-            if (ImGui.Selectable($"{name} (ID: {id})", false, ImGuiSelectableFlags.None, new Vector2(0, rowH)))
-                GiveItem(id);
-
-            ImGui.PopID();
-        }
-        if (last < _itemHits.Count)
-            ImGui.Dummy(new Vector2(1f, (_itemHits.Count - last) * rowH));
-
-        ImGui.EndChild();
-    }
-
-    private void RefreshItems()
-    {
-        string key = _itemCategory + "\n" + _itemSearch;
-        if (key == _lastItemQuery)
-            return;
-        _lastItemQuery = key;
-        _itemHits.Clear();
-        if (Main.gameMenu)
-            return;
-
-        var category = (ItemCategory)_itemCategory;
-        var probe = new Item();
-        for (int id = 1; id < ItemID.Count; id++)
-        {
-            string name = Lang.GetItemNameValue(id);
-            if (name.Length == 0)
-                continue;
-            if (_itemSearch.Length > 0 && name.IndexOf(_itemSearch, StringComparison.OrdinalIgnoreCase) < 0)
-                continue;
-            probe.SetDefaults(id);
-            if (!ItemCatalog.Matches(probe, category))
-                continue;
-            _itemHits.Add(id);
-        }
-    }
-
-    private static void GiveItem(int id)
-    {
-        var item = new Item();
-        item.SetDefaults(id);
-        item.stack = Math.Max(1, item.maxStack);
-        Main.mouseItem = item;
-        Notices.Post($"已取出 {Lang.GetItemNameValue(id)}");
-    }
-
     private static void DrawCharacterTab()
     {
         ImGui.BeginChild("char-scroll", new Vector2(0, 0), ImGuiChildFlags.None);
@@ -285,9 +207,7 @@ public sealed class StudioWindow : IWindow
         }
 
         var player = Main.LocalPlayer;
-        UiIcons.DrawItem(ItemID.Dresser, 20f);
-        ImGui.SameLine();
-        ImGui.TextColored(new Vector4(0.55f, 0.75f, 1f, 1f), "玩家属性 (Player Attributes)");
+        Ui.Heading(Icons.Human, "玩家属性 (Player Attributes)");
         int life = player.statLifeMax;
         if (ImGui.SliderInt("生命上限", ref life, 1, 5000))
         {
@@ -314,7 +234,7 @@ public sealed class StudioWindow : IWindow
         ImGui.Separator();
         ImGui.Spacing();
 
-        ImGui.TextColored(new Vector4(0.55f, 0.75f, 1f, 1f), "当前手持装备属性 (Held Item Editor)");
+        Ui.Heading(Icons.Pencil, "当前手持装备属性 (Held Item Editor)");
         var held = !Main.mouseItem.IsAir ? Main.mouseItem : player.HeldItem;
         if (held.IsAir)
         {
@@ -350,7 +270,7 @@ public sealed class StudioWindow : IWindow
         ImGui.Separator();
         ImGui.Spacing();
 
-        ImGui.TextColored(new Vector4(0.55f, 0.75f, 1f, 1f), "外观配色 (Colors)");
+        Ui.Heading(Icons.Colors, "外观配色 (Colors)");
         ColorEdit("发色", ref player.hairColor);
         ColorEdit("肤色", ref player.skinColor);
         ColorEdit("眼睛", ref player.eyeColor);
@@ -373,7 +293,7 @@ public sealed class StudioWindow : IWindow
     {
         ImGui.BeginChild("schem-scroll", new Vector2(0, 0), ImGuiChildFlags.None);
 
-        Ui.Heading(ItemID.LaserRuler, "蓝图导入与导出 (Schematics IO)");
+        Ui.Heading(Icons.Script, "蓝图导入与导出 (Schematics IO)");
         ImGui.InputText("蓝图文件路径", ref SchemPathInput, (UIntPtr)512);
 
         if (ImGui.Button("导入文件 (Import)", new Vector2(120, 26)) && SchemPathInput.Length > 0)
@@ -428,10 +348,10 @@ public sealed class StudioWindow : IWindow
     private static void DrawSettingsTab()
     {
         ImGui.BeginChild("settings-scroll", new Vector2(0, 0), ImGuiChildFlags.None);
-        Ui.Heading(ItemID.Cog, "显示");
-        ImGui.Checkbox("解锁帧率", ref CheatState.UnlockFps);
+        Ui.Heading(Icons.Sliders, "显示");
+        ImGui.Checkbox("帧率跟随屏幕刷新率", ref CheatState.UnlockFps);
         ImGui.Spacing();
-        Ui.Heading(ItemID.Cog, "通知");
+        Ui.Heading(Icons.Settings, "通知");
         var corner = CheatState.NotifyAnchor;
         if (Ui.CornerCombo("弹出位置", ref corner))
             CheatState.NotifyAnchor = corner;

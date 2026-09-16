@@ -37,7 +37,7 @@ public static class NotifyHost
         Check(ref _bright, CheatState.FullBright, "全图照明");
         Check(ref _freeze, CheatState.FreezeTime, "锁定时间");
         Check(ref _teleport, CheatState.ClickTeleport, "快捷传送");
-        Check(ref _unlockFps, CheatState.UnlockFps, "解锁帧率");
+        Check(ref _unlockFps, CheatState.UnlockFps, "帧率跟随屏幕刷新率");
         _armed = true;
     }
 
@@ -70,9 +70,7 @@ public static class NotifyHost
         ImGui.PushStyleColor(ImGuiCol.WindowBg, new Num.Vector4(0.13f, 0.11f, 0.09f, 0.94f));
         ImGui.PushStyleColor(ImGuiCol.Border, new Num.Vector4(0.22f, 0.74f, 0.97f, 0.95f));
         ImGui.PushStyleColor(ImGuiCol.Text, new Num.Vector4(0.99f, 0.96f, 0.94f, 1f));
-        const ImGuiWindowFlags flags = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove |
-                                       ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoNav |
-                                       ImGuiWindowFlags.NoInputs | ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoDocking;
+        const ImGuiWindowFlags flags = Ui.Toast;
 
         for (int i = 0; i < _items.Count; i++)
         {

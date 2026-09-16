@@ -53,6 +53,12 @@ public struct TileDataBlock : IEquatable<TileDataBlock>
         set => Flags = (byte)((Flags & 0x8F) | ((value & 0x07) << 4));
     }
 
+    public bool Skip
+    {
+        readonly get => (Flags & 0x80) != 0;
+        set => Flags = (byte)(value ? (Flags | 0x80) : (Flags & ~0x80));
+    }
+
     public bool RedWire
     {
         readonly get => (WireFlags & 0x01) != 0;

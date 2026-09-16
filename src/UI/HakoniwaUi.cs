@@ -20,6 +20,7 @@ public static class HakoniwaUi
     private static ImGuiBackend? _backend;
     private static readonly StudioWindow Studio = new();
     private static readonly FloatingBall FloatingBall = new();
+    private static readonly EditorToolbar Toolbar = new();
     private static readonly ChatOverlay Chat = new();
     private static readonly SignEditorWindow SignEditor = new();
 
@@ -50,15 +51,11 @@ public static class HakoniwaUi
             Visible = !Visible;
         _insertWasDown = insert;
 
-        var io = ImGui.GetIO();
-        if (io.WantCaptureMouse)
-            Main.LocalPlayer.mouseInterface = true;
-
-        HandleChatToggle(kb, io);
+        HandleChatToggle(kb);
         CaptureSelectKey(kb);
         SignEditor.UpdateSignState();
-        HandleTeleport(io);
-        HandleEditor(io);
+        HandleTeleport();
+        HandleEditor();
         NotifyHost.WatchToggles();
     }
 
@@ -66,8 +63,9 @@ public static class HakoniwaUi
     {
         if (_backend is null || Main.gameMenu)
             return;
-        var io = ImGui.GetIO();
-        CheatHooks.BlockGameMouse = io.WantCaptureMouse || Chat.IsOpen || SignEditor.IsOpen || (Visible && SelectionOverlay.ShouldBlock());
+        Ui.Sync(
+            extraMouse: Chat.IsOpen || SignEditor.IsOpen || (Visible && SelectionOverlay.ShouldBlock()),
+            extraKeyboard: Chat.IsOpen || SignEditor.IsOpen || CheatState.WaitingSelectKey);
     }
 
     private static void CaptureSelectKey(KeyboardState kb)
@@ -98,34 +96,39 @@ public static class HakoniwaUi
         if (_backend is null)
             return;
 
-        _backend.NewFrame();
+        if (!_backend.NewFrame())
+            return;
+        // Tools → Panels → Notices. World overlay uses Ui.WorldList (behind all windows).
         if (Visible)
         {
             FloatingBall.Draw();
+            if (!Main.gameMenu)
+            {
+                Toolbar.Draw();
+                SelectionOverlay.Draw();
+            }
             Studio.Draw();
         }
 
         SignEditor.Draw();
         Chat.Draw();
-        DrawOverlay();
         NotifyHost.Draw();
-        _backend.Render();
-        var io = ImGui.GetIO();
-        CheatHooks.BlockGameMouse = io.WantCaptureMouse || Chat.IsOpen || SignEditor.IsOpen || (Visible && SelectionOverlay.ShouldBlock());
-        CheatHooks.BlockGameKeyboard = Chat.IsOpen || SignEditor.IsOpen || io.WantCaptureKeyboard || CheatState.WaitingSelectKey;
+        _backend.Render(Visible && SelectionOverlay.ShouldBlock());
+        SyncMouseBlock();
     }
 
     private static void Init()
     {
+        CheatHooks.ApplyFpsUnlock();
         _backend = new ImGuiBackend(Main.instance.GraphicsDevice);
     }
 
-    private static void HandleChatToggle(KeyboardState kb, ImGuiIOPtr io)
+    private static void HandleChatToggle(KeyboardState kb)
     {
         bool enter = kb.IsKeyDown(Keys.Enter);
         if (enter && !_enterWasDown)
         {
-            if (!Chat.IsOpen && !io.WantCaptureKeyboard && !Main.editSign && !Main.editChest)
+            if (!Chat.IsOpen && !Ui.Keyboard && !Main.editSign && !Main.editChest)
                 Chat.Open();
         }
 
@@ -140,10 +143,14 @@ public static class HakoniwaUi
         }
     }
 
-    private static void HandleTeleport(ImGuiIOPtr io)
+    private static void HandleTeleport()
     {
-        if (!CheatState.ClickTeleport || io.WantCaptureMouse || !Main.LocalPlayer.active)
+        if (!CheatState.ClickTeleport || Ui.Mouse || !Main.LocalPlayer.active || !FocusHelper.AllowInputProcessing)
+        {
+            _rightWasDown = true;
+            _middleWasDown = true;
             return;
+        }
 
         var mouse = Mouse.GetState();
         bool right = mouse.RightButton == ButtonState.Pressed;
@@ -176,21 +183,21 @@ public static class HakoniwaUi
         return ((screen - center) / Main.mapFullscreenScale + Main.mapFullscreenPos) * 16f;
     }
 
-    private static void HandleEditor(ImGuiIOPtr io)
+    private static void HandleEditor()
     {
-        if (io.WantCaptureMouse || Main.mapFullscreen || Chat.IsOpen || SignEditor.IsOpen)
+        if (!FocusHelper.AllowInputProcessing || Main.mapFullscreen || Chat.IsOpen || SignEditor.IsOpen)
         {
-            _leftWasDown = false;
+            _leftWasDown = true;
             return;
         }
 
         bool left = Mouse.GetState().LeftButton == ButtonState.Pressed;
-        bool blocked = Visible && SelectionOverlay.Update();
-        if (!blocked && left && !_leftWasDown)
+        bool blocked = Visible && SelectionOverlay.Update(!Ui.Mouse);
+        if (!Ui.Mouse && !blocked && left && !_leftWasDown && EditorSession.Tool != EditorTool.Marquee)
             EditorSession.ApplyToolAtCursor();
 
         var kb = Keyboard.GetState();
-        bool ctrl = !io.WantCaptureKeyboard && (kb.IsKeyDown(Keys.LeftControl) || kb.IsKeyDown(Keys.RightControl));
+        bool ctrl = !Ui.Keyboard && (kb.IsKeyDown(Keys.LeftControl) || kb.IsKeyDown(Keys.RightControl));
         int hotkeys = 0;
         if (ctrl && kb.IsKeyDown(Keys.C)) hotkeys |= 1;
         if (ctrl && kb.IsKeyDown(Keys.X)) hotkeys |= 2;
@@ -205,11 +212,5 @@ public static class HakoniwaUi
         if ((pressed & 16) != 0) EditorSession.Redo();
         _hotkeys = hotkeys;
         _leftWasDown = left;
-    }
-
-    private static void DrawOverlay()
-    {
-        if (Visible)
-            SelectionOverlay.Draw();
     }
 }
