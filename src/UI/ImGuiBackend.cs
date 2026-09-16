@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -13,7 +13,7 @@ using Num = System.Numerics;
 namespace Hakoniwa.UI;
 
 /// <summary>
-/// FNA / XNA 与 Dear ImGui (ImGui.NET) 的极简渲染后端
+/// FNA / XNA 与 Dear ImGui (Hexa.NET.ImGui) 的极简渲染后端
 /// </summary>
 public sealed class ImGuiBackend : IDisposable
 {
@@ -27,6 +27,7 @@ public sealed class ImGuiBackend : IDisposable
     private int _scroll;
     private IntPtr _prevWndProc;
     private WndProc? _wndProc;
+    private readonly List<uint> _chars = [];
     private readonly RasterizerState _rasterizer = new()
     {
         CullMode = CullMode.None,
@@ -46,6 +47,10 @@ public sealed class ImGuiBackend : IDisposable
         ImGui.SetCurrentContext(context);
 
         var io = ImGui.GetIO();
+        io.BackendFlags |= ImGuiBackendFlags.RendererHasTextures;
+        var platform = ImGui.GetPlatformIO();
+        platform.RendererTextureMaxWidth = 2048;
+        platform.RendererTextureMaxHeight = 2048;
 
         Themes.HakoniwaTheme.Apply();
         BuildFont();
@@ -84,6 +89,7 @@ public sealed class ImGuiBackend : IDisposable
         io.MouseDrawCursor = io.WantCaptureMouse;
         ImGui.Render();
         var drawData = ImGui.GetDrawData();
+        SyncTextures(drawData);
         if (drawData.CmdListsCount == 0)
             return;
 
@@ -94,14 +100,14 @@ public sealed class ImGuiBackend : IDisposable
         _device.Viewport = oldViewport;
     }
 
+    public static unsafe ImTextureRef TexRef(IntPtr id) => new(null, id);
+
     private unsafe void BuildFont()
     {
         var io = ImGui.GetIO();
-        io.Fonts.TexDesiredWidth = 1024;
         io.Fonts.TexGlyphPadding = 1;
 
-        var cfgNative = ImGuiNative.ImFontConfig_ImFontConfig();
-        var cfg = new ImFontConfigPtr(cfgNative);
+        var cfg = ImGui.ImFontConfig();
         cfg.OversampleH = 1;
         cfg.OversampleV = 1;
         cfg.PixelSnapH = true;
@@ -109,23 +115,93 @@ public sealed class ImGuiBackend : IDisposable
         string fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Fonts", "fusion-pixel-12px-proportional-zh_hans.ttf");
         // UPEM 1200, hhea line 1600 → ImGui ScaleForPixelHeight(16) == 1 device pixel per font pixel
         if (File.Exists(fontPath))
-            io.Fonts.AddFontFromFileTTF(fontPath, 16f, cfg, io.Fonts.GetGlyphRangesChineseSimplifiedCommon());
+            io.Fonts.AddFontFromFileTTF(fontPath, 16f, cfg);
         else
             io.Fonts.AddFontDefault(cfg);
 
-        ImGuiNative.ImFontConfig_destroy(cfgNative);
+        ImGui.Destroy(cfg);
+    }
 
-        io.Fonts.GetTexDataAsRGBA32(out IntPtr pixels, out int width, out int height, out int _);
-        if (width > 2048 || height > 2048)
-            throw new NotSupportedException($"ImGui font atlas {width}x{height} exceeds XNA Reach 2048.");
+    private void SyncTextures(ImDrawDataPtr drawData)
+    {
+        var textures = drawData.Textures;
+        for (int i = 0; i < textures.Size; i++)
+            ApplyTexture(textures[i]);
+    }
 
+    private unsafe void ApplyTexture(ImTextureDataPtr tex)
+    {
+        if (tex.IsNull || tex.Status == ImTextureStatus.Ok)
+            return;
+
+        if (tex.Status == ImTextureStatus.WantCreate || tex.Status == ImTextureStatus.WantUpdates)
+        {
+            int width = tex.Width;
+            int height = tex.Height;
+            if (width > 2048 || height > 2048)
+                throw new NotSupportedException($"ImGui texture {width}x{height} exceeds XNA Reach 2048.");
+
+            var id = (IntPtr)tex.TexID;
+            TextureById.TryGetValue(id, out var gpu);
+            if (gpu is null || gpu.Width != width || gpu.Height != height)
+            {
+                gpu?.Dispose();
+                gpu = new Texture2D(_device, width, height, false, SurfaceFormat.Color);
+                if (id == IntPtr.Zero)
+                {
+                    id = (IntPtr)_nextTexId++;
+                    tex.SetTexID(id);
+                }
+
+                TextureById[id] = gpu;
+                IdByTexture[gpu] = id;
+                if (tex.Status == ImTextureStatus.WantCreate)
+                    _fontTexture = gpu;
+            }
+
+            Upload(gpu, tex);
+            tex.SetStatus(ImTextureStatus.Ok);
+            return;
+        }
+
+        if (tex.Status != ImTextureStatus.WantDestroy || tex.UnusedFrames <= 0)
+            return;
+
+        var dead = (IntPtr)tex.TexID;
+        if (dead != IntPtr.Zero && TextureById.TryGetValue(dead, out var old))
+        {
+            IdByTexture.Remove(old);
+            TextureById.Remove(dead);
+            if (_fontTexture == old)
+                _fontTexture = null;
+            old.Dispose();
+        }
+
+        tex.SetTexID(default);
+        tex.SetStatus(ImTextureStatus.Destroyed);
+    }
+
+    private static unsafe void Upload(Texture2D gpu, ImTextureDataPtr tex)
+    {
+        int width = tex.Width;
+        int height = tex.Height;
         var data = new byte[width * height * 4];
-        Marshal.Copy(pixels, data, 0, data.Length);
-        _fontTexture = new Texture2D(_device, width, height, false, SurfaceFormat.Color);
-        _fontTexture.SetData(data);
-        io.Fonts.SetTexID((IntPtr)1);
-        io.Fonts.ClearTexData();
-        io.Fonts.ClearInputData();
+        if (tex.Format == ImTextureFormat.Rgba32)
+            Marshal.Copy((IntPtr)tex.Pixels, data, 0, data.Length);
+        else if (tex.Format == ImTextureFormat.Alpha8)
+        {
+            byte* src = tex.Pixels;
+            for (int i = 0; i < width * height; i++)
+            {
+                int o = i * 4;
+                data[o] = data[o + 1] = data[o + 2] = 255;
+                data[o + 3] = src[i];
+            }
+        }
+        else
+            throw new NotSupportedException($"ImGui texture format {tex.Format} is not supported.");
+
+        gpu.SetData(data);
     }
 
     private void InitGraphics()
@@ -162,7 +238,7 @@ public sealed class ImGuiBackend : IDisposable
             for (int v = 0; v < cmdList.VtxBuffer.Size; v++)
             {
                 var vert = cmdList.VtxBuffer[v];
-                var col = vert.col;
+                var col = vert.Col;
                 var color = new Microsoft.Xna.Framework.Color(
                     (byte)(col & 0xFF),
                     (byte)((col >> 8) & 0xFF),
@@ -170,9 +246,9 @@ public sealed class ImGuiBackend : IDisposable
                     (byte)((col >> 24) & 0xFF)
                 );
                 vtx[v] = new VertexPositionColorTexture(
-                    new Microsoft.Xna.Framework.Vector3(vert.pos.X - 0.5f, vert.pos.Y - 0.5f, 0f),
+                    new Microsoft.Xna.Framework.Vector3(vert.Pos.X - 0.5f, vert.Pos.Y - 0.5f, 0f),
                     color,
-                    new Microsoft.Xna.Framework.Vector2(vert.uv.X, vert.uv.Y)
+                    new Microsoft.Xna.Framework.Vector2(vert.Uv.X, vert.Uv.Y)
                 );
             }
 
@@ -232,10 +308,9 @@ public sealed class ImGuiBackend : IDisposable
 
                 _device.ScissorRectangle = new Microsoft.Xna.Framework.Rectangle(clipX, clipY, clipW, clipH);
 
-                IntPtr texId = cmd.TextureId;
+                IntPtr texId = cmd.GetTexID();
                 Texture2D? currentTex = _fontTexture;
-                if (texId != IntPtr.Zero && texId != (IntPtr)1 &&
-                    TextureById.TryGetValue(texId, out var customTex) && customTex is { IsDisposed: false })
+                if (texId != IntPtr.Zero && TextureById.TryGetValue(texId, out var customTex) && customTex is { IsDisposed: false })
                     currentTex = customTex;
 
                 _device.Textures[0] = currentTex;
@@ -289,11 +364,15 @@ public sealed class ImGuiBackend : IDisposable
         for (int i = 0; i < 26; i++)
             AddKey(io, kb, Keys.A + i, ImGuiKey.A + i);
         for (int i = 0; i < 10; i++)
-            AddKey(io, kb, Keys.D0 + i, ImGuiKey._0 + i);
+            AddKey(io, kb, Keys.D0 + i, ImGuiKey.Key0 + i);
 
         io.AddKeyEvent(ImGuiKey.ModCtrl, kb.IsKeyDown(Keys.LeftControl) || kb.IsKeyDown(Keys.RightControl));
         io.AddKeyEvent(ImGuiKey.ModShift, kb.IsKeyDown(Keys.LeftShift) || kb.IsKeyDown(Keys.RightShift));
         io.AddKeyEvent(ImGuiKey.ModAlt, kb.IsKeyDown(Keys.LeftAlt) || kb.IsKeyDown(Keys.RightAlt));
+
+        for (int i = 0; i < _chars.Count; i++)
+            io.AddInputCharacter(_chars[i]);
+        _chars.Clear();
     }
 
     private static void AddKey(ImGuiIOPtr io, KeyboardState kb, Keys key, ImGuiKey mapped)
@@ -322,7 +401,7 @@ public sealed class ImGuiBackend : IDisposable
         {
             int ch = wParam.ToInt32() & 0xFFFF;
             if (ch >= 32)
-                ImGui.GetIO().AddInputCharacter((uint)ch);
+                _chars.Add((uint)ch);
         }
 
         return CallWindowProc(_prevWndProc, hWnd, msg, wParam, lParam);

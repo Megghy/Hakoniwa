@@ -1,6 +1,6 @@
 using System;
 using System.Numerics;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 using Terraria;
 using Terraria.ID;
 
@@ -60,7 +60,7 @@ public sealed class SignEditorWindow : IWindow
             ImGui.SameLine();
             ImGui.TextColored(new Vector4(0.55f, 0.75f, 1f, 1f), "编辑标牌内容 (支持换行与快捷键):");
 
-            ImGui.InputTextMultiline("##sign_text_input", ref _textBuffer, 2048, new Vector2(-1, 200f));
+            ImGui.InputTextMultiline("##sign_text_input", ref _textBuffer, (UIntPtr)2048, new Vector2(-1, 200f));
 
             ImGui.TextDisabled($"字符计数: {_textBuffer.Length} / 2048");
             ImGui.SameLine(300f);

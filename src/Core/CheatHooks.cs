@@ -2,6 +2,8 @@ using System;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
 using Terraria;
 using Terraria.DataStructures;
 using Terraria.GameInput;
@@ -11,11 +13,15 @@ namespace Hakoniwa.Core;
 
 public static class CheatHooks
 {
+    public static event Action? PreUpdate;
     public static event Action? PostUpdate;
     public static bool BlockGameMouse;
     public static bool BlockGameKeyboard;
 
     private static ILightingEngine? _vanillaLighting;
+    private static bool _fullBrightApplied;
+    private static readonly TimeSpan LogicTick = TimeSpan.FromTicks(TimeSpan.TicksPerSecond / 60);
+    private static TimeSpan _logicDebt;
     private const BindingFlags Flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
 
     public static void Install(HookManager hooks)
@@ -34,6 +40,7 @@ public static class CheatHooks
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.SetTitle), typeof(bool)), SetTitle);
         hooks.RegisterDetour(Req(typeof(PlayerInput), nameof(PlayerInput.UpdateInput)), UpdateInput);
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.ClearHoverItem)), ClearHoverItem);
+        hooks.RegisterDetour(Req(typeof(Lighting), nameof(Lighting.LightTiles), typeof(Rectangle)), LightTiles);
     }
 
     private static MethodInfo Req(Type type, string name, params Type[] args)
@@ -98,6 +105,9 @@ public static class CheatHooks
             Player.tileRangeX = 1000;
             Player.tileRangeY = 1000;
             self.blockRange = 1000;
+            self.tileSpeed = 0.01f;
+            self.wallSpeed = 0.01f;
+            self.pickSpeed = 0.01f;
         }
 
         if (!CheatState.GodMode)
@@ -125,10 +135,53 @@ public static class CheatHooks
 
     private static void Update(Action<Main, GameTime> orig, Main self, GameTime time)
     {
+        if (!CheatState.UnlockFps)
+        {
+            RunLogic(orig, self, time);
+            RestoreFpsCap(self);
+            return;
+        }
+
+        UnlockFps(self);
+        _logicDebt += time.ElapsedGameTime;
+        if (_logicDebt.Ticks > LogicTick.Ticks * 3)
+            _logicDebt = TimeSpan.FromTicks(LogicTick.Ticks * 3);
+        if (_logicDebt < LogicTick)
+            return;
+
+        while (_logicDebt >= LogicTick)
+        {
+            _logicDebt -= LogicTick;
+            RunLogic(orig, self, new GameTime(time.TotalGameTime, LogicTick));
+            UnlockFps(self);
+        }
+    }
+
+    private static void RunLogic(Action<Main, GameTime> orig, Main self, GameTime time)
+    {
+        PreUpdate?.Invoke();
         orig(self, time);
         ApplyLighting();
         ApplyTime();
+        CheatState.SaveIfDirty();
         PostUpdate?.Invoke();
+    }
+
+    private static void UnlockFps(Main self)
+    {
+        self.IsFixedTimeStep = false;
+        var graphics = Main.graphics;
+        graphics.SynchronizeWithVerticalRetrace = false;
+        if (self.GraphicsDevice.PresentationParameters.PresentationInterval != PresentInterval.Immediate)
+            graphics.ApplyChanges();
+    }
+
+    private static void RestoreFpsCap(Main self)
+    {
+        if (self.GraphicsDevice.PresentationParameters.PresentationInterval != PresentInterval.Immediate)
+            return;
+        Main.graphics.SynchronizeWithVerticalRetrace = true;
+        Main.graphics.ApplyChanges();
     }
 
     private static void UpdateInput(Action orig)
@@ -138,7 +191,7 @@ public static class CheatHooks
         orig();
         if (BlockGameKeyboard)
             PlayerInput.WritingText = true;
-        if (!BlockGameMouse)
+        if (!BlockGameMouse && !CheatState.SelectHeld(Keyboard.GetState()))
             return;
 
         PlayerInput.Triggers.Current.MouseLeft = false;
@@ -166,19 +219,35 @@ public static class CheatHooks
         Main.blockMouse = true;
     }
 
+    private static void LightTiles(Action<Rectangle> orig, Rectangle area)
+    {
+        ApplyLighting();
+        orig(area);
+    }
+
     private static void ApplyLighting()
     {
         if (CheatState.FullBright)
         {
             _vanillaLighting ??= Lighting._activeEngine;
-            if (!ReferenceEquals(Lighting._activeEngine, FullbrightEngine.Instance))
-                Lighting._activeEngine = FullbrightEngine.Instance;
+            Lighting._activeEngine = FullbrightEngine.Instance;
+            if (!_fullBrightApplied)
+            {
+                _fullBrightApplied = true;
+                FullbrightEngine.Instance.Rebuild();
+                Main.renderCount = 0;
+            }
             return;
         }
 
-        if (_vanillaLighting is not null && ReferenceEquals(Lighting._activeEngine, FullbrightEngine.Instance))
-            Lighting._activeEngine = _vanillaLighting;
-        _vanillaLighting = null;
+        if (_fullBrightApplied)
+        {
+            if (_vanillaLighting is not null)
+                Lighting._activeEngine = _vanillaLighting;
+            _vanillaLighting = null;
+            _fullBrightApplied = false;
+            Main.renderCount = 0;
+        }
     }
 
     private static void ApplyTime()

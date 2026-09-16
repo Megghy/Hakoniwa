@@ -1,5 +1,5 @@
 using System.Numerics;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 
 namespace Hakoniwa.UI.Themes;
 
@@ -77,9 +77,9 @@ public static class HakoniwaTheme
         // 页签
         colors[(int)ImGuiCol.Tab] = new Vector4(0.14f, 0.15f, 0.20f, 0.80f);
         colors[(int)ImGuiCol.TabHovered] = new Vector4(0.32f, 0.25f, 0.50f, 0.90f);
-        colors[(int)ImGuiCol.TabActive] = new Vector4(0.42f, 0.28f, 0.68f, 1.00f);
-        colors[(int)ImGuiCol.TabUnfocused] = new Vector4(0.10f, 0.11f, 0.15f, 0.80f);
-        colors[(int)ImGuiCol.TabUnfocusedActive] = new Vector4(0.25f, 0.18f, 0.40f, 1.00f);
+        colors[(int)ImGuiCol.TabSelected] = new Vector4(0.42f, 0.28f, 0.68f, 1.00f);
+        colors[(int)ImGuiCol.TabDimmed] = new Vector4(0.10f, 0.11f, 0.15f, 0.80f);
+        colors[(int)ImGuiCol.TabDimmedSelected] = new Vector4(0.25f, 0.18f, 0.40f, 1.00f);
 
         // 滚动条
         colors[(int)ImGuiCol.ScrollbarBg] = new Vector4(0.06f, 0.07f, 0.09f, 0.50f);

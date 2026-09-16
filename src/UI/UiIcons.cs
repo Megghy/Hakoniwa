@@ -1,5 +1,5 @@
 using System;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using ReLogic.Content;
@@ -72,7 +72,7 @@ public static class UiIcons
             ImGui.SetCursorPos(new Num.Vector2(cur.X + padX, cur.Y + padY));
         }
 
-        ImGui.Image(texId, drawSize, uv0, uv1);
+        ImGui.Image(ImGuiBackend.TexRef(texId), drawSize, uv0, uv1);
     }
 
     public static void DrawItemDirect(ImDrawListPtr drawList, Num.Vector2 center, int itemId, float targetSize = 22f, byte alpha = 255)
@@ -85,6 +85,6 @@ public static class UiIcons
         var drawSize = origSize * scale;
         var halfSize = drawSize * 0.5f;
         uint tint = (uint)((alpha << 24) | 0x00FFFFFF);
-        drawList.AddImage(texId, center - halfSize, center + halfSize, uv0, uv1, tint);
+        drawList.AddImage(ImGuiBackend.TexRef(texId), center - halfSize, center + halfSize, uv0, uv1, tint);
     }
 }

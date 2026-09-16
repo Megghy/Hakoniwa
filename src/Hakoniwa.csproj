@@ -10,14 +10,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Hexa.NET.ImGui" Version="2.2.9" />
+    <PackageReference Include="Hexa.NET.ImGui.Widgets" Version="1.2.18" />
     <PackageReference Include="MonoMod.RuntimeDetour" Version="25.2.2" />
     <PackageReference Include="ZstdSharp.Port" Version="0.8.4" />
-    <PackageReference Include="System.Text.Json" Version="8.0.5" />
-    <PackageReference Include="ImGui.NET" Version="1.90.8.1">
-      <ExcludeAssets>native</ExcludeAssets>
-    </PackageReference>
-    <PackageReference Include="System.Numerics.Vectors" Version="4.5.0" />
-    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
+    <PackageReference Include="System.Text.Json" Version="9.0.7" />
+    <PackageReference Include="System.Numerics.Vectors" Version="4.6.1" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2" />
     <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.3" PrivateAssets="all" />
   </ItemGroup>
 
@@ -55,7 +54,8 @@
     <Exec Command="powershell -NoProfile -File &quot;$(MSBuildThisFileDirectory)set-laa.ps1&quot; -Path &quot;$(TargetPath)&quot;" />
   </Target>
 
-  <Target Name="CopyCimguiX86" AfterTargets="Build" Condition="!Exists('$(OutputPath)cimgui.dll')">
-    <Copy SourceFiles="$(NuGetPackageRoot)\imgui.net\1.90.8.1\runtimes\win-x86\native\cimgui.dll" DestinationFolder="$(OutputPath)" />
+  <Target Name="CopyImGuiX86" AfterTargets="Build">
+    <Copy SourceFiles="$(NuGetPackageRoot)\hexa.net.imgui\2.2.9\runtimes\win-x86\native\cimgui.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(NuGetPackageRoot)\hexa.net.imguizmo\2.2.8.4\runtimes\win-x86\native\cimguizmo.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
   </Target>
 </Project>

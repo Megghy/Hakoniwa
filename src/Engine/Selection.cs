@@ -34,4 +34,26 @@ public sealed class Selection
     }
 
     public void Clear() => Active = false;
+
+    public bool Contains(int x, int y) =>
+        Active && x >= MinX && x <= MaxX && y >= MinY && y <= MaxY;
+
+    public void Set(int x0, int y0, int x1, int y1)
+    {
+        StartX = x0;
+        StartY = y0;
+        EndX = x1;
+        EndY = y1;
+        Active = true;
+    }
+
+    public void Offset(int dx, int dy)
+    {
+        if (!Active || (dx == 0 && dy == 0))
+            return;
+        StartX += dx;
+        EndX += dx;
+        StartY += dy;
+        EndY += dy;
+    }
 }

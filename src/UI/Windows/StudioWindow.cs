@@ -6,7 +6,7 @@ using Hakoniwa.Engine;
 using Hakoniwa.Engine.Data;
 using Hakoniwa.Engine.IO;
 using Hakoniwa.Engine.Tools;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.ID;
@@ -20,14 +20,14 @@ public sealed class StudioWindow : IWindow
 {
     public string Title => "箱庭工坊 (Hakoniwa Studio)###HakoniwaMainStudio";
     public string Label => "工坊";
-    public bool IsOpen { get; set; } = true;
+    public bool IsOpen { get; set; }
 
     private int _currentTab;
-    private static readonly string[] Tabs = ["建造选区", "世界规则", "物品库", "角色装备", "蓝图方案"];
-    private static readonly int[] TabIcons = [ItemID.ArchitectGizmoPack, ItemID.Sundial, ItemID.Chest, ItemID.Dresser, ItemID.LaserRuler];
+    private static readonly string[] Tabs = ["建造选区", "世界规则", "物品库", "角色装备", "蓝图方案", "设置"];
+    private static readonly int[] TabIcons = [ItemID.ArchitectGizmoPack, ItemID.Sundial, ItemID.Chest, ItemID.Dresser, ItemID.LaserRuler, ItemID.Cog];
 
     // 建造选项
-    private static readonly string[] Tools = ["笔刷 (Brush)", "油漆桶 (Fill)", "橡皮擦 (Eraser)", "矩形选区 (Select)"];
+    private static readonly string[] Tools = ["笔刷 (Brush)", "油漆桶 (Fill)", "橡皮擦 (Eraser)"];
     private static readonly string[] Shapes = ["圆形 (Circle)", "方形 (Square)", "菱形 (Diamond)"];
 
     // 物品库搜索状态
@@ -73,6 +73,9 @@ public sealed class StudioWindow : IWindow
                 case 4:
                     DrawSchematicsTab();
                     break;
+                case 5:
+                    DrawSettingsTab();
+                    break;
             }
         }
 
@@ -111,14 +114,17 @@ public sealed class StudioWindow : IWindow
         ImGui.BeginChild("build-scroll", new Vector2(0, 0), ImGuiChildFlags.None);
 
         // 选区信息与操作组
-        UiIcons.DrawItem(ItemID.LaserRuler, 20f);
-        ImGui.SameLine();
-        ImGui.TextColored(new Vector4(0.55f, 0.75f, 1f, 1f), "选区与几何变换 (Selection & Transform)");
+        Ui.Heading(ItemID.LaserRuler, "选区与几何变换 (Selection & Transform)");
         var sel = EditorSession.Selection;
+        if (EditorSession.SelectedTool > 2)
+            EditorSession.SelectedTool = 0;
         string selInfo = sel.Active
             ? $"当前选区: 起点 ({sel.MinX}, {sel.MinY})  尺寸: {sel.Width} x {sel.Height}"
-            : "当前无活动选区 (按住左键拖拽框选)";
+            : $"当前无活动选区 (按住 {CheatState.SelectModifier} 左键拖选)";
         ImGui.TextUnformatted(selInfo);
+        string bind = CheatState.WaitingSelectKey ? "按下新按键..." : CheatState.SelectModifier.ToString();
+        if (ImGui.Button($"框选键: {bind}"))
+            CheatState.WaitingSelectKey = true;
 
         if (ImGui.Button("复制 (Copy)", new Vector2(90, 26))) EditorSession.Copy();
         ImGui.SameLine();
@@ -143,9 +149,7 @@ public sealed class StudioWindow : IWindow
         ImGui.Spacing();
 
         // 笔刷配置
-        UiIcons.DrawItem(ItemID.Paintbrush, 20f);
-        ImGui.SameLine();
-        ImGui.TextColored(new Vector4(0.55f, 0.75f, 1f, 1f), "笔刷设置 (Brush & Tools)");
+        Ui.Heading(ItemID.Paintbrush, "笔刷设置 (Brush & Tools)");
         ImGui.Combo("当前工具", ref EditorSession.SelectedTool, Tools, Tools.Length);
 
         int shape = (int)EditorSession.BrushShape;
@@ -161,9 +165,7 @@ public sealed class StudioWindow : IWindow
     {
         ImGui.BeginChild("world-scroll", new Vector2(0, 0), ImGuiChildFlags.None);
 
-        UiIcons.DrawItem(ItemID.Sundial, 20f);
-        ImGui.SameLine();
-        ImGui.TextColored(new Vector4(0.55f, 0.75f, 1f, 1f), "创造模式规则 (Rules)");
+        Ui.Heading(ItemID.Sundial, "创造模式规则 (Rules)");
         ImGui.Checkbox("上帝模式 (God Mode)", ref CheatState.GodMode);
         ImGui.SameLine(220f);
         ImGui.Checkbox("全图照明 (Full Bright)", ref CheatState.FullBright);
@@ -180,7 +182,7 @@ public sealed class StudioWindow : IWindow
         ImGui.Separator();
         ImGui.Spacing();
 
-        ImGui.TextColored(new Vector4(0.55f, 0.75f, 1f, 1f), "世界时间与环境 (Time & Environment)");
+        Ui.Heading(ItemID.FastClock, "世界时间与环境 (Time & Environment)");
         float time = GetTimeFraction();
         if (ImGui.SliderFloat("时间进度 (0:00 - 24:00)", ref time, 0f, 1f, GetTimeString(time)))
             SetTimeFraction(time);
@@ -203,14 +205,14 @@ public sealed class StudioWindow : IWindow
 
     private void DrawItemsTab()
     {
-        ImGui.InputText("搜索物品", ref _itemSearch, 128);
+        ImGui.InputText("搜索物品", ref _itemSearch, (UIntPtr)128);
         ImGui.SameLine();
         ImGui.Combo("分类", ref _itemCategory, ItemCategories, ItemCategories.Length);
 
         RefreshItems();
         ImGui.TextDisabled($"共匹配 {_itemHits.Count} 个物品 (点击直接提取到鼠标)");
 
-        ImGui.BeginChild("items-list-child", new Vector2(0, 0), ImGuiChildFlags.Border);
+        ImGui.BeginChild("items-list-child", new Vector2(0, 0), ImGuiChildFlags.Borders);
         const float rowH = 22f;
         int first = Math.Max(0, (int)(ImGui.GetScrollY() / rowH));
         int last = Math.Min(_itemHits.Count, first + (int)(ImGui.GetWindowHeight() / rowH) + 2);
@@ -268,6 +270,7 @@ public sealed class StudioWindow : IWindow
         item.SetDefaults(id);
         item.stack = Math.Max(1, item.maxStack);
         Main.mouseItem = item;
+        Notices.Post($"已取出 {Lang.GetItemNameValue(id)}");
     }
 
     private static void DrawCharacterTab()
@@ -370,10 +373,8 @@ public sealed class StudioWindow : IWindow
     {
         ImGui.BeginChild("schem-scroll", new Vector2(0, 0), ImGuiChildFlags.None);
 
-        UiIcons.DrawItem(ItemID.LaserRuler, 20f);
-        ImGui.SameLine();
-        ImGui.TextColored(new Vector4(0.55f, 0.75f, 1f, 1f), "蓝图导入与导出 (Schematics IO)");
-        ImGui.InputText("蓝图文件路径", ref SchemPathInput, 512);
+        Ui.Heading(ItemID.LaserRuler, "蓝图导入与导出 (Schematics IO)");
+        ImGui.InputText("蓝图文件路径", ref SchemPathInput, (UIntPtr)512);
 
         if (ImGui.Button("导入文件 (Import)", new Vector2(120, 26)) && SchemPathInput.Length > 0)
         {
@@ -381,10 +382,11 @@ public sealed class StudioWindow : IWindow
             {
                 SchemLibrary.Add(SchematicSerializer.Load(SchemPathInput));
                 SelectedSchemIndex = SchemLibrary.Count - 1;
+                Notices.Post("蓝图已导入");
             }
             catch (Exception ex)
             {
-                Main.NewText($"[Hakoniwa] 蓝图导入失败: {ex.Message}", 255, 100, 100);
+                Notices.Post($"蓝图导入失败: {ex.Message}");
             }
         }
 
@@ -394,11 +396,11 @@ public sealed class StudioWindow : IWindow
             try
             {
                 SchematicSerializer.Save(SchemLibrary[SelectedSchemIndex], SchemPathInput);
-                Main.NewText("[Hakoniwa] 蓝图导出成功！", 100, 255, 100);
+                Notices.Post("蓝图已导出");
             }
             catch (Exception ex)
             {
-                Main.NewText($"[Hakoniwa] 蓝图导出失败: {ex.Message}", 255, 100, 100);
+                Notices.Post($"蓝图导出失败: {ex.Message}");
             }
         }
 
@@ -406,8 +408,8 @@ public sealed class StudioWindow : IWindow
         ImGui.Separator();
         ImGui.Spacing();
 
-        ImGui.InputText("过滤蓝图", ref SchemSearch, 128);
-        ImGui.BeginChild("schem-list-child", new Vector2(0, 0), ImGuiChildFlags.Border);
+        ImGui.InputText("过滤蓝图", ref SchemSearch, (UIntPtr)128);
+        ImGui.BeginChild("schem-list-child", new Vector2(0, 0), ImGuiChildFlags.Borders);
         for (int i = 0; i < SchemLibrary.Count; i++)
         {
             var schematic = SchemLibrary[i];
@@ -420,6 +422,22 @@ public sealed class StudioWindow : IWindow
 
         ImGui.EndChild();
 
+        ImGui.EndChild();
+    }
+
+    private static void DrawSettingsTab()
+    {
+        ImGui.BeginChild("settings-scroll", new Vector2(0, 0), ImGuiChildFlags.None);
+        Ui.Heading(ItemID.Cog, "显示");
+        ImGui.Checkbox("解锁帧率", ref CheatState.UnlockFps);
+        ImGui.Spacing();
+        Ui.Heading(ItemID.Cog, "通知");
+        var corner = CheatState.NotifyAnchor;
+        if (Ui.CornerCombo("弹出位置", ref corner))
+            CheatState.NotifyAnchor = corner;
+        ImGui.SliderFloat("通知大小", ref CheatState.NotifyScale, 0.7f, 1.6f, "%.2f");
+        if (ImGui.Button("测试通知"))
+            Notices.Post("通知测试");
         ImGui.EndChild();
     }
 

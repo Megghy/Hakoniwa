@@ -4,8 +4,7 @@ using System.Numerics;
 using Hakoniwa.Core;
 using Hakoniwa.Engine;
 using Hakoniwa.UI.Windows;
-using ImGuiNET;
-using Microsoft.Xna.Framework.Graphics;
+using Hexa.NET.ImGui;
 using Terraria;
 using Terraria.Audio;
 using Terraria.ID;
@@ -13,13 +12,14 @@ using Terraria.ID;
 namespace Hakoniwa.UI;
 
 /// <summary>
-/// 现代化圆形悬浮球 (支持像素图标、拖拽、靠边吸附、环绕展开与子按钮快捷控制)
+/// 现代化圆形悬浮球 (支持像素图标、拖拽、靠边吸附、多层环绕展开与子按钮快捷控制)
 /// </summary>
 public sealed class FloatingBall
 {
     private const float MainRadius = 24f;
     private const float SubRadius = 20f;
     private const float OrbitRadius = 68f;
+    private const float ButtonGap = 8f;
     private const float EdgeMargin = 28f;
 
     private Vector2 _pos = new(EdgeMargin, 220f);
@@ -48,7 +48,7 @@ public sealed class FloatingBall
             CheatState.InfiniteReach = toggle;
             CheatState.InfiniteItems = toggle;
         }));
-        _actions.Add(new("选区", "笔刷/选区工具切换", ItemID.LaserRuler, () => EditorSession.SelectedTool == 3, () => EditorSession.SelectedTool = EditorSession.SelectedTool == 3 ? 0 : 3));
+        _actions.Add(new("选区", "清除当前选区", ItemID.LaserRuler, () => EditorSession.Selection.Active, () => EditorSession.Selection.Clear()));
         _actions.Add(new("撤销", "撤销上一步操作", ItemID.MagicMirror, () => false, () => EditorSession.Undo()));
         _actions.Add(new("重做", "重做操作", ItemID.RecallPotion, () => false, () => EditorSession.Redo()));
     }
@@ -74,18 +74,10 @@ public sealed class FloatingBall
             _pos.Y = MathHelper.Clamp(_pos.Y, EdgeMargin, screenSize.Y - EdgeMargin);
         }
 
-        var mousePos = io.MousePos;
-        bool isMouseDown = io.MouseDown[0];
-        bool isMouseReleased = io.MouseReleased[0];
-
-        bool isHoveringMain = Vector2.Distance(mousePos, _pos) <= MainRadius;
-        bool isHoveringAny = isHoveringMain;
-        string? hoveredHint = null;
-        Vector2 hoveredSubCenter = Vector2.Zero;
-
+        GetFan(screenSize, out float centerAngle, out float totalSpan, out bool fullCircle);
         float cover = MainRadius + 6f;
         if (_expandAnim > 0.02f)
-            cover = OrbitRadius + SubRadius + 10f;
+            cover = OrbitOf(CountRings(_actions.Count, totalSpan, fullCircle) - 1) + SubRadius + 10f;
 
         ImGui.SetNextWindowPos(_pos - new Vector2(cover, cover), ImGuiCond.Always);
         ImGui.SetNextWindowSize(new Vector2(cover * 2f, cover * 2f));
@@ -100,7 +92,9 @@ public sealed class FloatingBall
                     ImGuiWindowFlags.NoSavedSettings |
                     ImGuiWindowFlags.NoNav |
                     ImGuiWindowFlags.NoBackground |
-                    ImGuiWindowFlags.NoDocking;
+                    ImGuiWindowFlags.NoDocking |
+                    ImGuiWindowFlags.NoBringToFrontOnFocus |
+                    ImGuiWindowFlags.NoFocusOnAppearing;
         if (!ImGui.Begin("##HakoniwaFloatingBall", flags))
         {
             ImGui.End();
@@ -108,94 +102,18 @@ public sealed class FloatingBall
             return;
         }
 
+        var mousePos = io.MousePos;
+        bool isMouseDown = io.MouseDown[0];
+        bool isMouseReleased = io.MouseReleased[0];
+        bool isHoveringMain = Vector2.Distance(mousePos, _pos) <= MainRadius;
+        HandleDrag(screenSize, mousePos, isMouseDown, isMouseReleased, isHoveringMain);
+
         var drawList = ImGui.GetWindowDrawList();
-
-        // 拖拽处理
-        if (isMouseDown && !_isDragging && isHoveringMain)
-        {
-            _isDragging = true;
-            _hasDragged = false;
-            _dragStartMouse = mousePos;
-            _dragOffset = mousePos - _pos;
-        }
-
-        if (_isDragging)
-        {
-            if (isMouseDown)
-            {
-                if (Vector2.Distance(mousePos, _dragStartMouse) > 5f)
-                    _hasDragged = true;
-
-                _pos = mousePos - _dragOffset;
-                _pos.X = MathHelper.Clamp(_pos.X, EdgeMargin, screenSize.X - EdgeMargin);
-                _pos.Y = MathHelper.Clamp(_pos.Y, EdgeMargin, screenSize.Y - EdgeMargin);
-            }
-            else if (isMouseReleased)
-            {
-                _isDragging = false;
-                if (_hasDragged)
-                {
-                    _targetPos.X = (_pos.X < screenSize.X * 0.5f) ? EdgeMargin : screenSize.X - EdgeMargin;
-                    _targetPos.Y = _pos.Y;
-                }
-                else
-                {
-                    _isExpanded = !_isExpanded;
-                    SoundEngine.PlaySound(12);
-                }
-            }
-        }
-
-        // 绘制环绕子按钮
+        bool isHoveringAny = isHoveringMain;
+        string? hoveredHint = null;
+        Vector2 hoveredSubCenter = Vector2.Zero;
         if (_expandAnim > 0.02f)
-        {
-            float centerAngle;
-            float totalSpan;
-
-            if (_pos.X < screenSize.X * 0.35f)
-            {
-                centerAngle = 0f;
-                totalSpan = (float)(Math.PI * 0.85);
-            }
-            else if (_pos.X > screenSize.X * 0.65f)
-            {
-                centerAngle = (float)Math.PI;
-                totalSpan = (float)(Math.PI * 0.85);
-            }
-            else
-            {
-                centerAngle = -(float)(Math.PI * 0.5);
-                totalSpan = (float)(Math.PI * 2.0);
-            }
-
-            int count = _actions.Count;
-            float startAngle = centerAngle - totalSpan * 0.5f;
-            float step = totalSpan / (count > 1 ? count - 1 : 1);
-            if (totalSpan >= (float)(Math.PI * 1.9))
-                step = totalSpan / count;
-
-            for (int i = 0; i < count; i++)
-            {
-                float angle = startAngle + step * i;
-                var subCenter = _pos + new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle)) * (OrbitRadius * _expandAnim);
-
-                bool isSubHovered = Vector2.Distance(mousePos, subCenter) <= SubRadius;
-                if (isSubHovered)
-                {
-                    isHoveringAny = true;
-                    hoveredHint = _actions[i].Hint;
-                    hoveredSubCenter = subCenter;
-                }
-
-                if (isSubHovered && isMouseReleased && !_isDragging)
-                {
-                    _actions[i].OnClick();
-                    SoundEngine.PlaySound(12);
-                }
-
-                DrawSubButton(drawList, subCenter, _actions[i], isSubHovered, _expandAnim);
-            }
-        }
+            DrawOrbit(drawList, mousePos, isMouseReleased, centerAngle, totalSpan, fullCircle, ref isHoveringAny, ref hoveredHint, ref hoveredSubCenter);
 
         DrawMainButton(drawList, _pos, isHoveringMain || _isDragging, _isExpanded);
 
@@ -209,17 +127,149 @@ public sealed class FloatingBall
             DrawTooltip(screenSize, hoveredSubCenter, hoveredHint);
     }
 
+    private void HandleDrag(Vector2 screenSize, Vector2 mousePos, bool isMouseDown, bool isMouseReleased, bool isHoveringMain)
+    {
+        if (isMouseDown && !_isDragging && isHoveringMain)
+        {
+            _isDragging = true;
+            _hasDragged = false;
+            _dragStartMouse = mousePos;
+            _dragOffset = mousePos - _pos;
+        }
+
+        if (!_isDragging)
+            return;
+
+        if (isMouseDown)
+        {
+            if (Vector2.Distance(mousePos, _dragStartMouse) > 5f)
+                _hasDragged = true;
+
+            _pos = mousePos - _dragOffset;
+            _pos.X = MathHelper.Clamp(_pos.X, EdgeMargin, screenSize.X - EdgeMargin);
+            _pos.Y = MathHelper.Clamp(_pos.Y, EdgeMargin, screenSize.Y - EdgeMargin);
+            return;
+        }
+
+        if (!isMouseReleased)
+            return;
+
+        _isDragging = false;
+        if (_hasDragged)
+        {
+            _targetPos.X = _pos.X < screenSize.X * 0.5f ? EdgeMargin : screenSize.X - EdgeMargin;
+            _targetPos.Y = _pos.Y;
+            return;
+        }
+
+        _isExpanded = !_isExpanded;
+        SoundEngine.PlaySound(12);
+    }
+
+    private void DrawOrbit(
+        ImDrawListPtr drawList,
+        Vector2 mousePos,
+        bool isMouseReleased,
+        float centerAngle,
+        float totalSpan,
+        bool fullCircle,
+        ref bool isHoveringAny,
+        ref string? hoveredHint,
+        ref Vector2 hoveredSubCenter)
+    {
+        int index = 0;
+        for (int ring = 0; index < _actions.Count; ring++)
+        {
+            float radius = OrbitOf(ring) * _expandAnim;
+            int take = Math.Min(RingCapacity(OrbitOf(ring), totalSpan, fullCircle), _actions.Count - index);
+            float startAngle = centerAngle - totalSpan * 0.5f;
+            float step = take <= 1 ? 0f : fullCircle ? totalSpan / take : totalSpan / (take - 1);
+
+            for (int i = 0; i < take; i++)
+            {
+                float angle = take == 1 ? centerAngle : startAngle + step * i;
+                var subCenter = _pos + new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle)) * radius;
+                var action = _actions[index++];
+
+                bool isSubHovered = Vector2.Distance(mousePos, subCenter) <= SubRadius;
+                if (isSubHovered)
+                {
+                    isHoveringAny = true;
+                    hoveredHint = action.Hint;
+                    hoveredSubCenter = subCenter;
+                }
+
+                if (isSubHovered && isMouseReleased && !_isDragging)
+                {
+                    action.OnClick();
+                    SoundEngine.PlaySound(12);
+                }
+
+                DrawSubButton(drawList, subCenter, action, isSubHovered, _expandAnim);
+            }
+        }
+    }
+
+    private void GetFan(Vector2 screenSize, out float centerAngle, out float totalSpan, out bool fullCircle)
+    {
+        if (_pos.X < screenSize.X * 0.35f)
+        {
+            centerAngle = 0f;
+            totalSpan = (float)(Math.PI * 0.85);
+            fullCircle = false;
+            return;
+        }
+
+        if (_pos.X > screenSize.X * 0.65f)
+        {
+            centerAngle = (float)Math.PI;
+            totalSpan = (float)(Math.PI * 0.85);
+            fullCircle = false;
+            return;
+        }
+
+        centerAngle = -(float)(Math.PI * 0.5);
+        totalSpan = (float)(Math.PI * 2.0);
+        fullCircle = true;
+    }
+
+    private static float RingStep => SubRadius * 2f + ButtonGap;
+
+    private static float OrbitOf(int ring) => OrbitRadius + ring * RingStep;
+
+    private static int RingCapacity(float radius, float totalSpan, bool fullCircle)
+    {
+        float ratio = (SubRadius * 2f + ButtonGap) / (2f * radius);
+        if (ratio >= 1f)
+            return 1;
+
+        int n = (int)Math.Floor(totalSpan / (2f * (float)Math.Asin(ratio)));
+        if (!fullCircle)
+            n++;
+        return Math.Max(1, n);
+    }
+
+    private static int CountRings(int count, float totalSpan, bool fullCircle)
+    {
+        int remaining = count;
+        int rings = 0;
+        while (remaining > 0)
+        {
+            remaining -= RingCapacity(OrbitOf(rings), totalSpan, fullCircle);
+            rings++;
+        }
+
+        return Math.Max(1, rings);
+    }
+
     private static void DrawMainButton(ImDrawListPtr drawList, Vector2 center, bool isHovered, bool isExpanded)
     {
         uint bgColor = isHovered ? 0xF02A2440 : 0xE01A162B;
         uint borderColor = isExpanded ? 0xFF38BDF8 : (isHovered ? 0xFF8B5CF6 : 0xFF6D28D9);
 
-        // 外层微阴影与圆形
         drawList.AddCircleFilled(center, MainRadius + 2f, 0x60000000);
         drawList.AddCircleFilled(center, MainRadius, bgColor);
         drawList.AddCircle(center, MainRadius, borderColor, 32, 2.0f);
-
-        // 绘制主像素图标
         UiIcons.DrawItemDirect(drawList, center, ItemID.ArchitectGizmoPack, 28f);
     }
 
@@ -236,12 +286,9 @@ public sealed class FloatingBall
             ? (uint)((alpha << 24) | 0x0038BDF8)
             : (uint)((alpha << 24) | (isHovered ? 0x008B5CF6 : 0x0055443B));
 
-        // 阴影与圆形背景
-        drawList.AddCircleFilled(center, SubRadius + 2f, (uint)(((byte)(anim * 80)) << 24));
+        drawList.AddCircleFilled(center, SubRadius + 2f, (uint)((byte)(anim * 80) << 24));
         drawList.AddCircleFilled(center, SubRadius, bgColor);
         drawList.AddCircle(center, SubRadius, borderColor, 24, isActive ? 2.0f : 1.5f);
-
-        // 绘制子功能的原版像素图标
         UiIcons.DrawItemDirect(drawList, center, action.IconItemId, 22f, alpha);
     }
 
@@ -254,22 +301,11 @@ public sealed class FloatingBall
         boxPos.X = MathHelper.Clamp(boxPos.X, 4f, screenSize.X - boxSize.X - 4f);
         boxPos.Y = MathHelper.Clamp(boxPos.Y, 4f, screenSize.Y - boxSize.Y - 4f);
 
-        ImGui.SetNextWindowPos(boxPos);
-        ImGui.SetNextWindowSize(boxSize);
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, padding);
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 4f);
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 1f);
-        ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(0.13f, 0.11f, 0.09f, 0.93f));
-        ImGui.PushStyleColor(ImGuiCol.Border, new Vector4(0.22f, 0.74f, 0.97f, 1f));
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.99f, 0.96f, 0.94f, 1f));
-        const ImGuiWindowFlags flags = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove |
-                                       ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.NoNav |
-                                       ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoInputs;
-        if (ImGui.Begin("##HakoniwaBallTip", flags))
-            ImGui.TextUnformatted(text);
-        ImGui.End();
-        ImGui.PopStyleColor(3);
-        ImGui.PopStyleVar(3);
+        var max = boxPos + boxSize;
+        var drawList = ImGui.GetForegroundDrawList();
+        drawList.AddRectFilled(boxPos, max, ImGui.ColorConvertFloat4ToU32(new Vector4(0.13f, 0.11f, 0.09f, 0.93f)), 4f);
+        drawList.AddRect(boxPos, max, ImGui.ColorConvertFloat4ToU32(new Vector4(0.22f, 0.74f, 0.97f, 1f)), 4f);
+        drawList.AddText(boxPos + padding, ImGui.ColorConvertFloat4ToU32(new Vector4(0.99f, 0.96f, 0.94f, 1f)), text);
     }
 
     private static class MathHelper

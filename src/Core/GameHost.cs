@@ -19,6 +19,7 @@ public static class GameHost
         if (string.IsNullOrEmpty(Terraria.Program.SavePath))
             Terraria.Program.SavePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), "My Games", "Terraria");
 
+        CheatState.Load();
         using var hooks = new HookManager();
         CheatHooks.Install(hooks);
         HakoniwaUi.Install();

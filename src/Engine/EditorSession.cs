@@ -14,20 +14,29 @@ public static class EditorSession
     public static int BrushRadius = 3;
     public static BrushShape BrushShape = BrushShape.Circle;
 
-    public static void Copy()
+    public static void Delete()
     {
         if (!Selection.Active)
             return;
-        Clipboard = ToolEngine.Extract(WorldTiles.Instance, Selection.MinX, Selection.MinY, Selection.Width, Selection.Height);
+        ToolEngine.ClearRect(WorldTiles.Instance, Selection.MinX, Selection.MinY, Selection.Width, Selection.Height, TileLayer.All, History);
+        WorldTiles.Refresh(Selection.MinX, Selection.MinY, Selection.Width, Selection.Height);
+        Notices.Post($"已删除选区 {Selection.Width}x{Selection.Height}");
+    }
+
+    public static void Copy()
+    {
+        if (!TryCopy())
+            return;
+        Notices.Post($"已复制 {Selection.Width}x{Selection.Height}");
     }
 
     public static void Cut()
     {
-        if (!Selection.Active)
+        if (!TryCopy())
             return;
-        Copy();
         ToolEngine.ClearRect(WorldTiles.Instance, Selection.MinX, Selection.MinY, Selection.Width, Selection.Height, TileLayer.All, History);
         WorldTiles.Refresh(Selection.MinX, Selection.MinY, Selection.Width, Selection.Height);
+        Notices.Post($"已剪切 {Selection.Width}x{Selection.Height}");
     }
 
     public static void Paste()
@@ -44,6 +53,7 @@ public static class EditorSession
 
         ToolEngine.Paste(WorldTiles.Instance, Clipboard, x, y, TileLayer.All, History);
         WorldTiles.Refresh(x, y, Clipboard.Width, Clipboard.Height);
+        Notices.Post($"已粘贴 {Clipboard.Width}x{Clipboard.Height}");
     }
 
     public static void FlipHorizontal()
@@ -51,6 +61,7 @@ public static class EditorSession
         if (Clipboard is null)
             return;
         Clipboard = TransformEngine.FlipHorizontal(Clipboard);
+        Notices.Post("剪贴板已水平翻转");
     }
 
     public static void FlipVertical()
@@ -58,6 +69,7 @@ public static class EditorSession
         if (Clipboard is null)
             return;
         Clipboard = TransformEngine.FlipVertical(Clipboard);
+        Notices.Post("剪贴板已垂直翻转");
     }
 
     public static void Rotate90()
@@ -65,18 +77,31 @@ public static class EditorSession
         if (Clipboard is null)
             return;
         Clipboard = TransformEngine.Rotate90Clockwise(Clipboard);
+        Notices.Post("剪贴板已旋转 90°");
     }
 
     public static void Undo()
     {
-        if (History.Undo(WorldTiles.Instance, out int x, out int y, out int w, out int h))
-            WorldTiles.Refresh(x, y, w, h);
+        if (!History.Undo(WorldTiles.Instance, out int x, out int y, out int w, out int h))
+            return;
+        WorldTiles.Refresh(x, y, w, h);
+        Notices.Post("已撤销");
     }
 
     public static void Redo()
     {
-        if (History.Redo(WorldTiles.Instance, out int x, out int y, out int w, out int h))
-            WorldTiles.Refresh(x, y, w, h);
+        if (!History.Redo(WorldTiles.Instance, out int x, out int y, out int w, out int h))
+            return;
+        WorldTiles.Refresh(x, y, w, h);
+        Notices.Post("已重做");
+    }
+
+    private static bool TryCopy()
+    {
+        if (!Selection.Active)
+            return false;
+        Clipboard = ToolEngine.Extract(WorldTiles.Instance, Selection.MinX, Selection.MinY, Selection.Width, Selection.Height);
+        return true;
     }
 
     public static void ApplyToolAtCursor()

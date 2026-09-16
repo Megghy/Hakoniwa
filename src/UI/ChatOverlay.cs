@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 using Terraria;
 using Terraria.Audio;
 using Terraria.Chat;
@@ -123,7 +123,7 @@ public sealed class ChatOverlay
                              ImGuiInputTextFlags.CallbackHistory |
                              ImGuiInputTextFlags.CallbackCompletion;
 
-            bool submitted = ImGui.InputText("##chat_text_box", ref _inputBuffer, 512, inputFlags, TextCallback);
+            bool submitted = ImGui.InputText("##chat_text_box", ref _inputBuffer, (UIntPtr)512, inputFlags, TextCallback);
             bool focused = ImGui.IsItemActive() || ImGui.IsItemFocused();
             _focusRequested = !focused;
 
@@ -192,9 +192,9 @@ public sealed class ChatOverlay
             _selectedCandidateIndex = 0;
     }
 
-    private unsafe int TextCallback(ImGuiInputTextCallbackData* data)
+    private unsafe int TextCallback(IntPtr data)
     {
-        var ptr = new ImGuiInputTextCallbackDataPtr(data);
+        var ptr = new ImGuiInputTextCallbackDataPtr((ImGuiInputTextCallbackData*)data);
         if (ptr.EventFlag == ImGuiInputTextFlags.CallbackHistory)
         {
             if (ptr.EventKey == ImGuiKey.UpArrow)

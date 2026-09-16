@@ -1,11 +1,10 @@
 using Hakoniwa.Core;
 using Hakoniwa.Engine;
 using Hakoniwa.UI.Windows;
-using ImGuiNET;
+using Hexa.NET.ImGui;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using Terraria;
-using Num = System.Numerics;
 
 namespace Hakoniwa.UI;
 
@@ -33,7 +32,9 @@ public static class HakoniwaUi
 
     public static void Install()
     {
+        CheatHooks.PreUpdate += SyncMouseBlock;
         CheatHooks.PostUpdate += Tick;
+        Notices.Posted += NotifyHost.Enqueue;
         Main.OnEngineLoad += Init;
         Main.OnPostDraw += _ => Render();
     }
@@ -54,9 +55,42 @@ public static class HakoniwaUi
             Main.LocalPlayer.mouseInterface = true;
 
         HandleChatToggle(kb, io);
+        CaptureSelectKey(kb);
         SignEditor.UpdateSignState();
         HandleTeleport(io);
         HandleEditor(io);
+        NotifyHost.WatchToggles();
+    }
+
+    private static void SyncMouseBlock()
+    {
+        if (_backend is null || Main.gameMenu)
+            return;
+        var io = ImGui.GetIO();
+        CheatHooks.BlockGameMouse = io.WantCaptureMouse || Chat.IsOpen || SignEditor.IsOpen || (Visible && SelectionOverlay.ShouldBlock());
+    }
+
+    private static void CaptureSelectKey(KeyboardState kb)
+    {
+        if (!CheatState.WaitingSelectKey)
+            return;
+        if (kb.IsKeyDown(Keys.Escape))
+        {
+            CheatState.WaitingSelectKey = false;
+            return;
+        }
+
+        var pressed = kb.GetPressedKeys();
+        for (int i = 0; i < pressed.Length; i++)
+        {
+            var key = pressed[i];
+            if (key is Keys.None or Keys.Escape or Keys.Insert)
+                continue;
+            CheatState.SelectModifier = key;
+            CheatState.WaitingSelectKey = false;
+            Notices.Post($"框选键: {key}");
+            return;
+        }
     }
 
     public static void Render()
@@ -74,10 +108,11 @@ public static class HakoniwaUi
         SignEditor.Draw();
         Chat.Draw();
         DrawOverlay();
+        NotifyHost.Draw();
         _backend.Render();
         var io = ImGui.GetIO();
-        CheatHooks.BlockGameMouse = io.WantCaptureMouse;
-        CheatHooks.BlockGameKeyboard = Chat.IsOpen || SignEditor.IsOpen || io.WantCaptureKeyboard;
+        CheatHooks.BlockGameMouse = io.WantCaptureMouse || Chat.IsOpen || SignEditor.IsOpen || (Visible && SelectionOverlay.ShouldBlock());
+        CheatHooks.BlockGameKeyboard = Chat.IsOpen || SignEditor.IsOpen || io.WantCaptureKeyboard || CheatState.WaitingSelectKey;
     }
 
     private static void Init()
@@ -150,19 +185,9 @@ public static class HakoniwaUi
         }
 
         bool left = Mouse.GetState().LeftButton == ButtonState.Pressed;
-        int x = (int)(Main.MouseWorld.X / 16f);
-        int y = (int)(Main.MouseWorld.Y / 16f);
-        if (EditorSession.SelectedTool == 3)
-        {
-            if (left && !_leftWasDown)
-                EditorSession.Selection.Begin(x, y);
-            else if (left)
-                EditorSession.Selection.DragTo(x, y);
-        }
-        else if (left && !_leftWasDown)
-        {
+        bool blocked = Visible && SelectionOverlay.Update();
+        if (!blocked && left && !_leftWasDown)
             EditorSession.ApplyToolAtCursor();
-        }
 
         var kb = Keyboard.GetState();
         bool ctrl = !io.WantCaptureKeyboard && (kb.IsKeyDown(Keys.LeftControl) || kb.IsKeyDown(Keys.RightControl));
@@ -184,19 +209,7 @@ public static class HakoniwaUi
 
     private static void DrawOverlay()
     {
-        var selection = EditorSession.Selection;
-        if (!selection.Active || Main.gameMenu || Main.mapFullscreen)
-            return;
-
-        var list = ImGui.GetBackgroundDrawList();
-        var min = WorldToScreen(new Vector2(selection.MinX * 16, selection.MinY * 16));
-        var max = WorldToScreen(new Vector2((selection.MaxX + 1) * 16, (selection.MaxY + 1) * 16));
-        list.AddRect(min, max, ImGui.ColorConvertFloat4ToU32(new Num.Vector4(0.55f, 0.75f, 1f, 0.9f)), 0f, ImDrawFlags.None, 2f);
-    }
-
-    private static Num.Vector2 WorldToScreen(Vector2 world)
-    {
-        var screen = Vector2.Transform(world - Main.screenPosition, Main.GameViewMatrix.ZoomMatrix);
-        return new Num.Vector2(screen.X, screen.Y);
+        if (Visible)
+            SelectionOverlay.Draw();
     }
 }
