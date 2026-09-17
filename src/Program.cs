@@ -12,6 +12,8 @@ public static class Program
     {
         try
         {
+            if (AppUpdate.TryApply(args))
+                return;
             GameHost.Run(args);
         }
         catch (Exception ex)

@@ -12,6 +12,8 @@
     <Product>Hakoniwa - Terraria Architect Workshop</Product>
     <Copyright>Copyright © 2025</Copyright>
     <TerrariaDir Condition="'$(TerrariaDir)' == ''">D:\SteamLibrary\steamapps\common\Terraria</TerrariaDir>
+    <InformationalVersion>dev</InformationalVersion>
+    <InformationalVersion Condition="'$(HakoniwaVersion)' != ''">$(HakoniwaVersion)</InformationalVersion>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
@@ -22,5 +24,6 @@
 
   <ItemGroup>
     <PackageReference Include="PolySharp" Version="1.14.1" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net48" Version="1.0.3" PrivateAssets="all" />
   </ItemGroup>
 </Project>
