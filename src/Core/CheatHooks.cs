@@ -18,6 +18,8 @@ public static class CheatHooks
 {
     public static event Action? PreUpdate;
     public static event Action? PostUpdate;
+    public static event Action? LocalItemCheckBegin;
+    public static event Action? LocalItemCheckEnd;
     public static bool BlockGameMouse;
     public static bool BlockGameScroll;
     public static bool BlockGameKeyboard;
@@ -95,7 +97,11 @@ public static class CheatHooks
         int stack = self.inventory[self.selectedItem].stack;
         int mouseType = Main.mouseItem.type;
         int mouseStack = Main.mouseItem.stack;
+        if (self.whoAmI == Main.myPlayer)
+            LocalItemCheckBegin?.Invoke();
         orig(self);
+        if (self.whoAmI == Main.myPlayer)
+            LocalItemCheckEnd?.Invoke();
         if (!CheatState.InfiniteItems || self.whoAmI != Main.myPlayer)
             return;
         Restore(self.inventory[self.selectedItem], type, stack);
@@ -252,16 +258,9 @@ public static class CheatHooks
     private static void HandleIME(Action<Main> orig, Main self)
     {
         if (WantTextInput)
-        {
             PlayerInput.WritingText = true;
-            orig(self);
-            return;
-        }
-
-        bool keep = BlockGameKeyboard;
-        PlayerInput.WritingText = false;
         orig(self);
-        if (keep)
+        if (BlockGameKeyboard)
             PlayerInput.WritingText = true;
     }
 
@@ -272,7 +271,8 @@ public static class CheatHooks
         orig();
         if (BlockGameKeyboard)
             PlayerInput.WritingText = true;
-        Main.instance.HandleIME();
+        if (WantTextInput)
+            Main.instance.HandleIME();
 
         var kb = Keyboard.GetState();
         bool isCtrl = kb.IsKeyDown(Keys.LeftControl) || kb.IsKeyDown(Keys.RightControl);

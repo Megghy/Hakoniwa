@@ -30,6 +30,16 @@ public static class EditorSession
     public static readonly HistoryStack History = new();
     public static Schematic? Clipboard;
     public static EditorTool Tool;
+
+    public static void SetTool(EditorTool tool)
+    {
+        if (Tool == tool)
+            return;
+        Tool = tool;
+        if (tool is EditorTool.Brush or EditorTool.Eraser or EditorTool.Shape)
+            Notices.Post("Ctrl+滚轮调整大小");
+    }
+
     public static int BrushRadius = 3;
     public static BrushShape BrushShape = BrushShape.Circle;
     public static BrushShape SelectionShape = BrushShape.Square;

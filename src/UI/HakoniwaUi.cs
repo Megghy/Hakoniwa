@@ -13,6 +13,7 @@ namespace Hakoniwa.UI;
 public static class HakoniwaUi
 {
     public static bool Visible = true;
+    public static bool ChatOpen => Chat.IsOpen || Main.drawingPlayerChat;
     public static bool StudioIsOpen
     {
         get => Studio.IsOpen;
@@ -46,11 +47,14 @@ public static class HakoniwaUi
     private static bool _enterWasDown;
     private static bool _invWasOpen;
     private static int _hotkeys;
+    private static bool _brushMerging;
     private static string _packRename = "";
 
     public static void Install()
     {
         CheatHooks.PreUpdate += SyncMouseBlock;
+        CheatHooks.LocalItemCheckBegin += TileStrokeRecorder.Before;
+        CheatHooks.LocalItemCheckEnd += TileStrokeRecorder.After;
         CheatHooks.PostUpdate += Tick;
         Notices.Posted += NotifyHost.Enqueue;
         Main.OnEngineLoad += Init;
@@ -70,7 +74,10 @@ public static class HakoniwaUi
 
         HandleChatToggle(kb);
         CaptureSelectKey(kb);
-        SignEditor.UpdateSignState();
+        if (CheatState.ImGuiInput)
+            SignEditor.UpdateSignState();
+        else
+            SignEditor.IsOpen = false;
         HandleTeleport();
         HandleEditor();
         NotifyHost.WatchToggles();
@@ -368,6 +375,14 @@ public static class HakoniwaUi
 
     private static void HandleChatToggle(KeyboardState kb)
     {
+        if (!CheatState.ImGuiInput)
+        {
+            if (Chat.IsOpen)
+                Chat.Close();
+            _enterWasDown = kb.IsKeyDown(Keys.Enter);
+            return;
+        }
+
         bool enter = kb.IsKeyDown(Keys.Enter);
         if (enter && !_enterWasDown && !Main.editSign && !Main.editChest)
         {
@@ -436,7 +451,7 @@ public static class HakoniwaUi
 
     private static void HandleEditor()
     {
-        if (!FocusHelper.AllowInputProcessing || Main.mapFullscreen || Chat.IsOpen || SignEditor.IsOpen)
+        if (!FocusHelper.AllowInputProcessing || Main.mapFullscreen || Chat.IsOpen || SignEditor.IsOpen || NativeTextInput.Busy)
         {
             _leftWasDown = true;
             _toolRightWasDown = true;
@@ -480,6 +495,16 @@ public static class HakoniwaUi
             }
             else if (right && !_toolRightWasDown && tool == EditorTool.Replace)
                 EditorSession.PickMatch(tx, ty);
+            else if (left && tool is EditorTool.Brush or EditorTool.Eraser)
+            {
+                if (!_leftWasDown)
+                {
+                    EditorSession.History.Merge();
+                    _brushMerging = true;
+                }
+
+                EditorSession.ApplyToolAtCursor();
+            }
             else if (left && !_leftWasDown && tool != EditorTool.Marquee)
                 EditorSession.ApplyToolAtCursor();
         }
@@ -502,5 +527,10 @@ public static class HakoniwaUi
         _toolRightWasDown = right;
         if (!left && EditorSession.Stroking)
             EditorSession.EndStroke();
+        if (!left && _brushMerging)
+        {
+            EditorSession.History.Seal();
+            _brushMerging = false;
+        }
     }
 }

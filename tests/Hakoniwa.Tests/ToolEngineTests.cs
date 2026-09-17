@@ -177,6 +177,25 @@ public sealed class ToolEngineTests
     }
 
     [Fact]
+    public void History_MergeStrokeIsOneUndo()
+    {
+        var world = new TileAccessor(8, 8);
+        var history = new HistoryStack();
+        history.Merge();
+        ToolEngine.Paint(world, 1, 1, 0, BrushShape.Square, Stone(1), history: history);
+        ToolEngine.Paint(world, 2, 2, 0, BrushShape.Square, Stone(2), history: history);
+        history.Seal();
+        Assert.Equal(1, history.Count);
+        Assert.True(history.Undo(world));
+        Assert.Equal(0, world.Get(1, 1).TileType);
+        Assert.Equal(0, world.Get(2, 2).TileType);
+        Assert.False(history.Undo(world));
+        Assert.True(history.Redo(world));
+        Assert.Equal(1, world.Get(1, 1).TileType);
+        Assert.Equal(2, world.Get(2, 2).TileType);
+    }
+
+    [Fact]
     public void TileAccessor_RejectsOutOfBounds()
     {
         var world = new TileAccessor(2, 2);

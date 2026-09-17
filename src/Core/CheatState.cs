@@ -18,6 +18,7 @@ public static class CheatState
     public static bool FreezeTime;
     public static bool ClickTeleport = true;
     public static bool UnlockFps = true;
+    public static bool ImGuiInput;
     public static double FrozenTime;
     public static Keys SelectModifier = Keys.LeftControl;
     public static bool WaitingSelectKey;
@@ -64,6 +65,7 @@ public static class CheatState
         FreezeTime = data.FreezeTime;
         ClickTeleport = data.ClickTeleport;
         UnlockFps = data.UnlockFps;
+        ImGuiInput = data.ImGuiInput;
         if (data.SelectModifier != 0)
             SelectModifier = (Keys)data.SelectModifier;
         NotifyAnchor = (NotifyCorner)data.NotifyAnchor;
@@ -103,6 +105,7 @@ public static class CheatState
         FreezeTime = FreezeTime,
         ClickTeleport = ClickTeleport,
         UnlockFps = UnlockFps,
+        ImGuiInput = ImGuiInput,
         SelectModifier = (int)SelectModifier,
         NotifyAnchor = (int)NotifyAnchor,
         NotifyScale = NotifyScale,
@@ -132,6 +135,7 @@ public static class CheatState
         public bool FreezeTime { get; set; }
         public bool ClickTeleport { get; set; }
         public bool UnlockFps { get; set; } = true;
+        public bool ImGuiInput { get; set; }
         public int SelectModifier { get; set; } = (int)Keys.LeftControl;
         public int NotifyAnchor { get; set; } = (int)NotifyCorner.右下;
         public float NotifyScale { get; set; } = 1f;

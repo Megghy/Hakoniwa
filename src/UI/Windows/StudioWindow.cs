@@ -197,7 +197,7 @@ public sealed class StudioWindow
         // 工具切换 Chips
         int tool = (int)EditorSession.Tool;
         Ui.Chips("tools-chips", Ui.ToolNames.Length, ref tool, i => Ui.ToolNames[i], 26f);
-        EditorSession.Tool = (EditorTool)tool;
+        EditorSession.SetTool((EditorTool)tool);
 
         ImGui.Spacing();
 
@@ -470,6 +470,19 @@ public sealed class StudioWindow
         ImGui.Separator();
         ImGui.Spacing();
 
+        Ui.Heading(Icons.Script, "文本输入");
+        if (ImGui.RadioButton("原版输入增强（光标 / 选区 / 撤销）", !CheatState.ImGuiInput))
+            CheatState.ImGuiInput = false;
+        if (ImGui.RadioButton("ImGui 接管聊天与标牌", CheatState.ImGuiInput))
+            CheatState.ImGuiInput = true;
+        ImGui.TextDisabled(CheatState.ImGuiInput
+            ? "聊天与标牌走工坊输入框，带补全与消息列表。"
+            : "沿用原版输入条，补上光标、选区、撤销与历史上翻。");
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
         // 2. 通知弹窗配置
         Ui.Heading(Icons.Settings, "通知与提示 (Notifications)");
         var corner = CheatState.NotifyAnchor;
@@ -494,7 +507,7 @@ public sealed class StudioWindow
         ImGui.SetColumnWidth(0, 220f);
 
         ImGui.TextColored(Ui.Gold, "Insert"); ImGui.NextColumn(); ImGui.TextUnformatted("显示 / 隐藏 箱庭所有浮层界面"); ImGui.NextColumn();
-        ImGui.TextColored(Ui.Gold, "Enter"); ImGui.NextColumn(); ImGui.TextUnformatted("呼出箱庭 ImGui 聊天输入框"); ImGui.NextColumn();
+        ImGui.TextColored(Ui.Gold, "Enter"); ImGui.NextColumn(); ImGui.TextUnformatted(CheatState.ImGuiInput ? "呼出工坊聊天输入框" : "打开原版聊天（增强光标/选区）"); ImGui.NextColumn();
         ImGui.TextColored(Ui.Gold, "Ctrl + 滚轮"); ImGui.NextColumn(); ImGui.TextUnformatted("调节笔刷/橡皮擦半径 (带范围预览与HUD)"); ImGui.NextColumn();
         ImGui.TextColored(Ui.Gold, "Ctrl + C / X / V"); ImGui.NextColumn(); ImGui.TextUnformatted("选区复制 / 剪切 / 粘贴"); ImGui.NextColumn();
         ImGui.TextColored(Ui.Gold, "Ctrl + Z / Y"); ImGui.NextColumn(); ImGui.TextUnformatted("撤销 / 重做 上一步瓦片修改"); ImGui.NextColumn();

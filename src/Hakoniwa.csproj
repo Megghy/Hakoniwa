@@ -4,7 +4,7 @@
     <RootNamespace>Hakoniwa</RootNamespace>
     <AssemblyName>Hakoniwa</AssemblyName>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <OutputPath>$(TerrariaDir)\</OutputPath>
+    <OutputPath>$(TerrariaDir)\Hakoniwa\</OutputPath>
     <UseWindowsForms>true</UseWindowsForms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
@@ -57,5 +57,18 @@
   <Target Name="CopyImGuiX86" AfterTargets="Build">
     <Copy SourceFiles="$(NuGetPackageRoot)\hexa.net.imgui\2.2.9\runtimes\win-x86\native\cimgui.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(NuGetPackageRoot)\hexa.net.imguizmo\2.2.8.4\runtimes\win-x86\native\cimguizmo.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyLauncher" AfterTargets="SetLargeAddressAware">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(TerrariaDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(TargetPath).config" DestinationFolder="$(TerrariaDir)" SkipUnchangedFiles="true" Condition="Exists('$(TargetPath).config')" />
+    <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(TerrariaDir)" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
+  </Target>
+
+  <Target Name="SweepRootDuplicates" AfterTargets="CopyLauncher;CopyImGuiX86">
+    <ItemGroup>
+      <_Lib Include="$(OutputPath)*.dll;$(OutputPath)*.pdb" Condition="'%(Filename)' != 'Hakoniwa'" />
+    </ItemGroup>
+    <Delete Files="@(_Lib-&gt;'$(TerrariaDir)\%(Filename)%(Extension)')" ContinueOnError="true" />
   </Target>
 </Project>

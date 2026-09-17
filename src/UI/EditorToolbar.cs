@@ -97,7 +97,7 @@ public sealed class EditorToolbar
         var (tool, icon, tip, shapes) = Tools[i];
         ImGui.SetCursorPos(new Vector2(Pad, Pad + Grip + 2f + i * Cell));
         if (ImGui.InvisibleButton($"##tool{i}", new Vector2(Cell, Cell)))
-            EditorSession.Tool = tool;
+            EditorSession.SetTool(tool);
 
         var min = ImGui.GetItemRectMin();
         var max = ImGui.GetItemRectMax();

@@ -124,7 +124,7 @@ internal static class EditorOverlay
 
     private static void DrawCursorHud()
     {
-        if (Main.gameMenu || !Main.LocalPlayer.active)
+        if (Main.gameMenu || !Main.LocalPlayer.active || HakoniwaUi.ChatOpen)
             return;
         EditorSession.CursorTile(out int x, out int y);
         string text;

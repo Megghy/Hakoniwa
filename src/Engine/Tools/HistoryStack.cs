@@ -27,6 +27,8 @@ public sealed class HistoryStack
     private int _oldest;
     private int _count;
     private int _redoDepth;
+    private bool _merge;
+    private bool _opened;
 
     public HistoryStack(int capacity = 64)
     {
@@ -40,6 +42,14 @@ public sealed class HistoryStack
     public bool CanUndo => Count > 0;
     public bool CanRedo => _redoDepth > 0;
 
+    public void Merge()
+    {
+        _merge = true;
+        _opened = false;
+    }
+
+    public void Seal() => _merge = false;
+
     public void Push(IReadOnlyList<TileChange> changes)
     {
         if (changes is null)
@@ -51,6 +61,12 @@ public sealed class HistoryStack
         for (int i = 0; i < changes.Count; i++)
             snapshot[i] = changes[i];
 
+        if (_merge && _opened && Count > 0)
+        {
+            Absorb(snapshot);
+            return;
+        }
+
         if (_redoDepth > 0)
         {
             _count -= _redoDepth;
@@ -61,12 +77,46 @@ public sealed class HistoryStack
         {
             _slots[_oldest] = snapshot;
             _oldest = (_oldest + 1) % _slots.Length;
-            return;
+        }
+        else
+        {
+            _slots[(_oldest + _count) % _slots.Length] = snapshot;
+            _count++;
         }
 
-        _slots[(_oldest + _count) % _slots.Length] = snapshot;
-        _count++;
+        if (_merge)
+            _opened = true;
     }
+
+    private void Absorb(TileChange[] incoming)
+    {
+        int index = (_oldest + Count - 1) % _slots.Length;
+        var last = _slots[index];
+        var map = new Dictionary<long, int>(last.Length);
+        var list = new List<TileChange>(last.Length + incoming.Length);
+        for (int i = 0; i < last.Length; i++)
+        {
+            map[Key(last[i].X, last[i].Y)] = i;
+            list.Add(last[i]);
+        }
+
+        foreach (var change in incoming)
+        {
+            long key = Key(change.X, change.Y);
+            if (map.TryGetValue(key, out int at))
+                list[at] = new TileChange(change.X, change.Y, list[at].Before, change.After);
+            else
+            {
+                map[key] = list.Count;
+                list.Add(change);
+            }
+        }
+
+        list.RemoveAll(static c => c.Before == c.After);
+        _slots[index] = list.ToArray();
+    }
+
+    private static long Key(int x, int y) => ((long)x << 32) | (uint)y;
 
     public bool Undo(ITileGrid world) => Undo(world, out _, out _, out _, out _);
 
@@ -117,6 +167,12 @@ public sealed class HistoryStack
 
     private static void Bounds(TileChange[] changes, out int x, out int y, out int width, out int height)
     {
+        if (changes.Length == 0)
+        {
+            x = y = width = height = 0;
+            return;
+        }
+
         int minX = int.MaxValue;
         int minY = int.MaxValue;
         int maxX = int.MinValue;

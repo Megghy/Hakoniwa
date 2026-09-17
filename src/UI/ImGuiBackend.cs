@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
+using Hakoniwa.Core;
 using Hexa.NET.ImGui;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -147,14 +148,14 @@ public sealed class ImGuiBackend : IDisposable
         cfg.OversampleV = 1;
         cfg.PixelSnapH = true;
 
-        string fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Fonts", "fusion-pixel-12px-proportional-zh_hans.ttf");
+        string fontPath = Path.Combine(GameHost.ContentDirectory, "Assets", "Fonts", "fusion-pixel-12px-proportional-zh_hans.ttf");
         // UPEM 1200, hhea line 1600 → ImGui ScaleForPixelHeight(16) == 1 device pixel per font pixel
         if (File.Exists(fontPath))
             io.Fonts.AddFontFromFileTTF(fontPath, 16f, cfg);
         else
             io.Fonts.AddFontDefault(cfg);
 
-        string iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Fonts", "pixelart-icons-font.ttf");
+        string iconPath = Path.Combine(GameHost.ContentDirectory, "Assets", "Fonts", "pixelart-icons-font.ttf");
         if (File.Exists(iconPath))
         {
             var iconCfg = ImGui.ImFontConfig();

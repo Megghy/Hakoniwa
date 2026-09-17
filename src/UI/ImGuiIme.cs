@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using Hakoniwa.Core;
 using Hexa.NET.ImGui;
 using ReLogic.Localization.IME;
 using ReLogic.OS;
@@ -40,6 +41,9 @@ internal sealed unsafe class ImGuiIme : IDisposable
 
     public void Draw()
     {
+        if (NativeTextInput.Busy)
+            return;
+
         var ime = Ime;
         string composition = ime.CompositionString ?? "";
         bool list = ime.IsCandidateListVisible && ime.CandidateCount > 0;

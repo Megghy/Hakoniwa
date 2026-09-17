@@ -68,6 +68,9 @@ public sealed class ChatOverlay
     private readonly List<CommandHint> _matchedCandidates = [];
     private int _selectedCandidateIndex;
     private bool _scrollToBottom;
+    private int _caretSnap;
+    private int _wordOp;
+    private bool _wordSelect;
     private readonly ImGuiInputTextCallback _textCallback;
 
     public ChatOverlay()
@@ -112,7 +115,16 @@ public sealed class ChatOverlay
         var io = ImGui.GetIO();
         float width = Math.Min(io.DisplaySize.X - 40f, 760f);
         float posX = 20f;
-        float posY = io.DisplaySize.Y - 58f;
+        int lines = 1;
+        foreach (char c in _inputBuffer)
+        {
+            if (c == '\n')
+                lines++;
+        }
+        if (lines > 4)
+            lines = 4;
+        float inputH = 16f + lines * 22f;
+        float posY = io.DisplaySize.Y - inputH - 14f;
 
         UpdateCandidateMatches();
 
@@ -131,7 +143,7 @@ public sealed class ChatOverlay
 
         InputFocused = false;
         ImGui.SetNextWindowPos(new Vector2(posX, posY));
-        ImGui.SetNextWindowSize(new Vector2(width, 44f));
+        ImGui.SetNextWindowSize(new Vector2(width, inputH));
         if (ImGui.Begin("##HakoniwaChatInputBar", Ui.Overlay | ImGuiWindowFlags.NoMove))
         {
             var dl = ImGui.GetWindowDrawList();
@@ -147,18 +159,47 @@ public sealed class ChatOverlay
             if (_ignoreEnter && !ImGui.IsKeyDown(ImGuiKey.Enter))
                 _ignoreEnter = false;
 
+            _wordOp = 0;
+            bool restoreCtrl = false;
+            if (io.KeyCtrl)
+            {
+                if (ImGui.IsKeyPressed(ImGuiKey.LeftArrow, true))
+                    _wordOp = -1;
+                else if (ImGui.IsKeyPressed(ImGuiKey.RightArrow, true))
+                    _wordOp = 1;
+                else if (ImGui.IsKeyPressed(ImGuiKey.Backspace, true))
+                    _wordOp = -2;
+                else if (ImGui.IsKeyPressed(ImGuiKey.Delete, true))
+                    _wordOp = 2;
+                _wordSelect = io.KeyShift;
+                if (_wordOp != 0)
+                {
+                    io.KeyCtrl = false;
+                    restoreCtrl = true;
+                }
+            }
+
             if (_focusRequested)
             {
                 ImGui.SetKeyboardFocusHere();
                 _focusRequested = false;
             }
 
-            ImGui.SetNextItemWidth(width - 110f);
             var inputFlags = ImGuiInputTextFlags.EnterReturnsTrue |
+                             ImGuiInputTextFlags.CtrlEnterForNewLine |
                              ImGuiInputTextFlags.CallbackHistory |
-                             ImGuiInputTextFlags.CallbackCompletion;
+                             ImGuiInputTextFlags.CallbackCompletion |
+                             ImGuiInputTextFlags.CallbackAlways;
 
-            bool submitted = ImGui.InputText("##chat_text_box", ref _inputBuffer, (UIntPtr)512, inputFlags, _textCallback);
+            bool submitted = ImGui.InputTextMultiline(
+                "##chat_text_box",
+                ref _inputBuffer,
+                (UIntPtr)16384,
+                new Vector2(width - 110f, inputH - 16f),
+                inputFlags,
+                _textCallback);
+            if (restoreCtrl)
+                io.KeyCtrl = true;
             InputFocused = ImGui.IsItemActive() || ImGui.IsItemFocused();
 
             ImGui.SameLine(0f, 8f);
@@ -432,8 +473,48 @@ public sealed class ChatOverlay
                 SetInputBuffer(ptr, target);
             }
         }
+        else if (ptr.EventFlag == ImGuiInputTextFlags.CallbackAlways)
+            ApplyWordOp(ptr);
 
         return 0;
+    }
+
+    private void ApplyWordOp(ImGuiInputTextCallbackDataPtr ptr)
+    {
+        if (_wordOp == 0)
+        {
+            _caretSnap = ptr.CursorPos;
+            return;
+        }
+
+        int op = _wordOp;
+        _wordOp = 0;
+        if (op is -1 or 1)
+        {
+            int pos = op < 0 ? WordBoundary.Left(_inputBuffer, _caretSnap) : WordBoundary.Right(_inputBuffer, _caretSnap);
+            ptr.CursorPos = pos;
+            if (_wordSelect)
+            {
+                if (ptr.SelectionStart == ptr.SelectionEnd)
+                    ptr.SelectionStart = _caretSnap;
+                ptr.SelectionEnd = pos;
+            }
+            else
+            {
+                ptr.SelectionStart = ptr.SelectionEnd = pos;
+            }
+
+            _caretSnap = pos;
+            return;
+        }
+
+        var editor = new TextEditor();
+        editor.Bind(_inputBuffer);
+        editor.Click(_caretSnap, select: false);
+        editor.DeleteWord(op < 0 ? -1 : 1);
+        SetInputBuffer(ptr, editor.Text);
+        ptr.CursorPos = ptr.SelectionStart = ptr.SelectionEnd = editor.Caret;
+        _caretSnap = editor.Caret;
     }
 
     private static void SetInputBuffer(ImGuiInputTextCallbackDataPtr data, string text)
