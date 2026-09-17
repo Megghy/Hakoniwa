@@ -44,6 +44,8 @@ public static class CheatHooks
         hooks.RegisterDetour(Req(typeof(Player), nameof(Player.ConsumeItem), typeof(int), typeof(bool), typeof(bool)), ConsumeItem);
         hooks.RegisterDetour(Req(typeof(Player), nameof(Player.ItemCheck)), ItemCheck);
         hooks.RegisterDetour(Req(typeof(Player), nameof(Player.ResetEffects)), ResetEffects);
+        hooks.RegisterDetour(Req(typeof(Player), nameof(Player.DryCollision), typeof(bool), typeof(bool)), DryCollision);
+        hooks.RegisterDetour(Req(typeof(Player), nameof(Player.WetCollision), typeof(bool), typeof(bool), typeof(float)), WetCollision);
         hooks.RegisterDetour(Req(typeof(Player), nameof(Player.IsInTileInteractionRange), typeof(int), typeof(int), typeof(TileReachCheckSettings), typeof(int)), InRange);
         hooks.RegisterDetour(Req(typeof(WorldGen), nameof(WorldGen.PlaceTile), typeof(int), typeof(int), typeof(int), typeof(bool), typeof(bool), typeof(int), typeof(int)), PlaceTile);
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.Update), typeof(GameTime)), Update);
@@ -133,12 +135,7 @@ public static class CheatHooks
         }
 
         if (CheatState.NoClip)
-        {
-            self.gravity = 0f;
-            self.maxFallSpeed = 0f;
             self.noFallDmg = true;
-            self.fallStart = (int)(self.position.Y / 16f);
-        }
 
         if (!CheatState.GodMode)
             return;
@@ -162,6 +159,31 @@ public static class CheatHooks
             if (Main.debuff[i])
                 self.buffImmune[i] = true;
         }
+    }
+
+    private static void DryCollision(Action<Player, bool, bool> orig, Player self, bool fallThrough, bool ignorePlats)
+    {
+        if (NoClipStep(self))
+            return;
+        orig(self, fallThrough, ignorePlats);
+    }
+
+    private static void WetCollision(Action<Player, bool, bool, float> orig, Player self, bool fallThrough, bool ignorePlats, float movementSpeed)
+    {
+        if (NoClipStep(self))
+            return;
+        orig(self, fallThrough, ignorePlats, movementSpeed);
+    }
+
+    private static bool NoClipStep(Player self)
+    {
+        if (!CheatState.NoClip || self.whoAmI != Main.myPlayer)
+            return false;
+        self.position += self.velocity;
+        float pad = 640f;
+        self.position.X = MathHelper.Clamp(self.position.X, Main.leftWorld + pad, Main.rightWorld - pad - self.width);
+        self.position.Y = MathHelper.Clamp(self.position.Y, Main.topWorld + pad, Main.bottomWorld - pad - self.height);
+        return true;
     }
 
     private static bool InRange(Func<Player, int, int, TileReachCheckSettings, int, bool> orig, Player self, int targetX, int targetY, TileReachCheckSettings settings, int extra)
