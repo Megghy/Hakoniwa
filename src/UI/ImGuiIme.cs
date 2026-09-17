@@ -64,6 +64,16 @@ internal sealed unsafe class ImGuiIme : IDisposable
             }
         }
 
+        var pos = ImGui.GetWindowPos();
+        var size = ImGui.GetWindowSize();
+        var screen = ImGui.GetIO().DisplaySize;
+        if (pos.Y + size.Y > screen.Y)
+            pos.Y = _caret.Y - size.Y;
+        if (pos.X + size.X > screen.X)
+            pos.X = screen.X - size.X;
+        if (pos.Y < 0f) pos.Y = 0f;
+        if (pos.X < 0f) pos.X = 0f;
+        ImGui.SetWindowPos(pos);
         ImGui.End();
     }
 

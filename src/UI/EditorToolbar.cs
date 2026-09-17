@@ -22,6 +22,9 @@ public sealed class EditorToolbar
         (EditorTool.Brush, Icons.Brush, "笔刷", true),
         (EditorTool.Fill, Icons.Colors, "油漆桶", false),
         (EditorTool.Eraser, Icons.Eraser, "橡皮擦", true),
+        (EditorTool.Eyedropper, Icons.Pencil, "吸管", false),
+        (EditorTool.Replace, Icons.Reload, "替换\n左键替换，右键取样匹配源", false),
+        (EditorTool.Shape, Icons.Section, "形状", true),
     ];
 
     private Vector2 _pos = new(Margin, 140f);
@@ -104,21 +107,53 @@ public sealed class EditorToolbar
             dl.AddRectFilled(min, max, on ? 0xE02A2440 : 0x80221E2C, 5f);
         if (on)
             dl.AddRectFilled(min, new Vector2(min.X + 2f, max.Y), Ui.ChipOn, 1f);
-        Icons.DrawDirect(dl, (min + max) * 0.5f, icon);
+        if (tool == EditorTool.Shape)
+            DrawKindIcon(dl, (min + max) * 0.5f, on ? Ui.ChipOn : 0xFFD6D3E0);
+        else
+            Icons.DrawDirect(dl, (min + max) * 0.5f, icon);
 
         if (hover)
-            ImGui.SetTooltip(shapes ? $"{tip}\n右键选择形态" : tip);
+            ImGui.SetTooltip(tool == EditorTool.Shape
+                ? $"形状 · {Ui.DrawNames[(int)EditorSession.DrawKind]}\n右键选择直线 / 矩形 / 圆形"
+                : shapes ? $"{tip}\n右键选择形态" : tip);
         if (!shapes || !ImGui.BeginPopupContextItem($"##shape{i}"))
             return;
 
-        ref var shape = ref tool == EditorTool.Marquee ? ref EditorSession.SelectionShape : ref EditorSession.BrushShape;
-        for (int s = 0; s < Ui.ShapeNames.Length; s++)
+        if (tool == EditorTool.Shape)
         {
-            if (ImGui.Selectable(Ui.ShapeNames[s], (int)shape == s))
-                shape = (BrushShape)s;
+            for (int s = 0; s < Ui.DrawNames.Length; s++)
+            {
+                if (ImGui.Selectable(Ui.DrawNames[s], (int)EditorSession.DrawKind == s))
+                    EditorSession.DrawKind = (DrawKind)s;
+            }
+        }
+        else
+        {
+            ref var shape = ref tool == EditorTool.Marquee ? ref EditorSession.SelectionShape : ref EditorSession.BrushShape;
+            for (int s = 0; s < Ui.ShapeNames.Length; s++)
+            {
+                if (ImGui.Selectable(Ui.ShapeNames[s], (int)shape == s))
+                    shape = (BrushShape)s;
+            }
         }
 
         ImGui.EndPopup();
+    }
+
+    private static void DrawKindIcon(ImDrawListPtr dl, Vector2 c, uint color)
+    {
+        switch (EditorSession.DrawKind)
+        {
+            case DrawKind.Line:
+                dl.AddLine(c + new Vector2(-7f, 6f), c + new Vector2(7f, -6f), color, 1.6f);
+                break;
+            case DrawKind.Circle:
+                dl.AddCircle(c, 8f, color, 20, 1.6f);
+                break;
+            default:
+                dl.AddRect(c - new Vector2(7f, 7f), c + new Vector2(7f, 7f), color, 0f, ImDrawFlags.None, 1.6f);
+                break;
+        }
     }
 
     private static Vector2 Dock(Vector2 pos, Vector2 size, Vector2 display)

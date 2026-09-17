@@ -22,8 +22,10 @@ public static class Ui
     public const uint SlotInner = 0xFF141A28;
     public const uint GoldBorder = 0xFFF8BD38;
 
-    public static readonly string[] ToolNames = ["选区", "笔刷", "油漆桶", "橡皮擦"];
+    public static readonly string[] ToolNames = ["选区", "笔刷", "油漆桶", "橡皮擦", "吸管", "替换", "形状"];
+    public static readonly string[] LayerNames = ["物块", "墙壁", "涂漆", "电线", "液体"];
     public static readonly string[] ShapeNames = ["圆形", "方形", "菱形"];
+    public static readonly string[] DrawNames = ["直线", "矩形", "圆形"];
 
     public const ImGuiWindowFlags Overlay =
         ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar |
@@ -42,12 +44,13 @@ public static class Ui
     public static bool Mouse { get; private set; }
     public static bool Keyboard { get; private set; }
 
-    public static void Sync(bool extraMouse = false, bool extraKeyboard = false)
+    public static void Sync(bool extraMouse = false, bool extraKeyboard = false, bool blockGameMouse = false, bool skipImGuiKeyboard = false)
     {
         var io = ImGui.GetIO();
         Mouse = extraMouse || io.WantCaptureMouse;
-        Keyboard = extraKeyboard || io.WantCaptureKeyboard;
-        CheatHooks.BlockGameMouse = Mouse;
+        Keyboard = extraKeyboard || (!skipImGuiKeyboard && io.WantCaptureKeyboard);
+        CheatHooks.BlockGameMouse = Mouse || blockGameMouse;
+        CheatHooks.BlockGameScroll = Mouse;
         CheatHooks.BlockGameKeyboard = Keyboard;
         CheatHooks.WantTextInput = io.WantTextInput;
     }

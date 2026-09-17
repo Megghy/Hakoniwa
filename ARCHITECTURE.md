@@ -5,7 +5,7 @@
 - **单项目高内聚架构**：拒绝过度拆分。单一项目 `Hakoniwa.csproj` 编译为唯一产物 `Hakoniwa.exe`，彻底消灭多 DLL 运行时 `AssemblyResolve` 路径地狱。
 - **命名空间清晰隔离**：在项目内部通过 `Core/`、`Engine/`、`UI/` 划分清晰的职责边界。
 - **双层渲染架构**：
-  - **GUI 交互层**：采用成熟的 `Dear ImGui (ImGui.NET)`，零多余状态，即时模式渲染。
+  - **GUI 交互层**：采用成熟的 `Dear ImGui (Hexa.NET.ImGui)`，零多余状态，即时模式渲染。
   - **世界投影层**：直接复用游戏原生 `SpriteBatch`，保证与物块网格 100% 像素对齐。
 - **现代化 C# 体验**：使用 SDK-Style `.csproj` + `<LangVersion>latest</LangVersion>` + `PolySharp`，在 `net48` 目标下完整享受 C# 12/13 最新语法。
 
@@ -15,39 +15,47 @@
 
 ```mermaid
 flowchart TD
-    Program["Program.cs (入口引导)"]
+    Program["Program.cs"]
+    Host["GameHost (定位 Terraria / AssemblyResolve)"]
     UI["Hakoniwa.UI (ImGui 面板 + 世界投影)"]
     Engine["Hakoniwa.Engine (选区 / 变换 / 蓝图 IO)"]
     Core["Hakoniwa.Core (MonoMod Hook / 规则突破)"]
-    Game["Terraria.exe / FNA / XNA (游戏本体)"]
+    Game["Terraria.exe / XNA (游戏本体)"]
 
-    Program --> UI
-    Program --> Engine
-    Program --> Core
+    Program --> Host
+    Host --> Core
+    Host --> UI
     UI --> Engine
     UI --> Core
     Engine --> Core
     Core -. Hook / Detour .-> Game
-    UI -. GraphicsDevice Hook .-> Game
+    UI -. OnPostDraw / GraphicsDevice .-> Game
 ```
 
-### 2.1 Hakoniwa.Core
-- 负责 `MonoMod.RuntimeDetour` 与 `MonoMod.ILHook` 的安装与生命周期管理（`HookManager`）。
-- 劫持 `Player.tileRangeX/Y`、`Player.PlaceThing`、`WorldGen.PlaceTile` 实现无限放置、防消耗、自由浮空放置。
-- 提供安全、统一的世界读写切片接口（`TileAccessor`）。
+### 2.1 Hakoniwa.Core (`src/Core/`)
+- `GameHost`：定位 `Terraria.exe` 目录、`AssemblyResolve`、加载 `CheatState` / `InventoryPacks`、安装 Hook 与 UI，再 `Terraria.Program.LaunchGame`。
+- `HookManager`：统一注册 `Hook` / `ILHook`，`Dispose` 时逆序释放。
+- `CheatHooks` + `CheatState`：无限达距、防消耗、浮空放置、全图照明（`FullbrightEngine`）等运行时规则突破；状态持久化到本地 JSON。
+- `TileAccessor` / `WorldTiles` / `ITileGrid`：统一世界格子读写；`SchematicWorld` 把蓝图粘贴到活世界。
+- `ItemCatalog` / `InventoryPacks` / `CustomWeaponData` / `ItemTooltipExtra`：物品目录、背包套装、自定义武器与 Tooltip 扩展。
+- `Notices`：游戏内通知事件，UI 侧 `NotifyHost` 消费。
 
-### 2.2 Hakoniwa.Engine
-- **TileDataBlock**：紧凑值类型物块快照结构（12 字节对齐），记录 Tile Type, Wall, Paint, Slope/HalfBlock, Liquid, Wire。
-- **TransformEngine**：矩阵旋转（90°/180°/270°）、水平/垂直翻转、平移。
-- **ToolEngine**：圆形/矩形/菱形笔刷、带遮罩的 Flood Fill 算法、橡皮擦。
-- **SchematicSerializer**：基于 Zstd 压缩的 `.schem` 结构体导入导出。
+### 2.2 Hakoniwa.Engine (`src/Engine/`)
+- `TileDataBlock`：紧凑值类型物块快照（Type / Wall / Paint / Slope / Liquid / Wire）。
+- `Selection` + `EditorSession`：选区、剪贴板、幽灵预览与工具会话。
+- `TransformEngine`：90°/180°/270° 旋转、水平/垂直翻转。
+- `ToolEngine`：圆形/矩形/菱形笔刷、带遮罩 Flood Fill、橡皮擦。
+- `HistoryStack`：编辑操作撤销/重做。
+- `Schematic` / `SchematicEntity` + `SchematicSerializer`：Zstd 压缩 `.schem` 导入导出。
 
-### 2.3 Hakoniwa.UI
-- **ImGuiBackend**：接入 FNA/XNA 的 `GraphicsDevice` 绘制管线与 Win32 输入拦截。
-- **Theme**：定制Terraria像素风格主题
-- **Windows**：
-  - 主工具栏（ToolboxWindow）
-  - 蓝图库与切块管理器（SchematicWindow）
-  - 世界属性与时间控制（WorldControlWindow）
-  - 选区与变换面板（SelectionWindow）
-- **WorldOverlay**：在 `Main.Draw` 尾部绘制选区框、刷子准星、幽灵投影。
+### 2.3 Hakoniwa.UI (`src/UI/`)
+- `HakoniwaUi`：挂入 `Main.OnEngineLoad` / `OnPostDraw`，统一 Tick、热键（Insert 切换可见性）与窗口生命周期。
+- `ImGuiBackend` + `ImGuiIme`：XNA `GraphicsDevice` 绘制管线、Win32 输入与 IME。
+- `Themes/HakoniwaTheme`：Terraria 像素风格主题。
+- 世界空间：`EditorOverlay` / `SelectionOverlay` 在 `OnPostDraw` 绘制选区框、笔刷准星、幽灵物块。
+- 面板：`StudioWindow`（工坊 + `WorldTab`）、`ItemPickerWindow`、`ItemEditorWindow`、`SignEditorWindow`、`EditorToolbar`、`FloatingBall`、`ChatOverlay`、`NotifyHost`。
+
+### 2.4 构建与测试
+- 唯一产物：`src/Hakoniwa.csproj` → `Hakoniwa.exe`，`OutputPath` 直接指向 `$(TerrariaDir)`；构建后 `set-laa.ps1` 打 LAA，并拷贝 x86 `cimgui.dll`。
+- 共享 SDK：根 `Directory.Build.props`（`net48`、x86、`LangVersion=latest`、PolySharp）。
+- 测试：`tests/Hakoniwa.Tests/` 覆盖 HookManager、Schematic、TileDataBlock、ToolEngine、ImGui 平台。

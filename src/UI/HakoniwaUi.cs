@@ -42,6 +42,7 @@ public static class HakoniwaUi
     private static bool _insertWasDown;
     private static bool _middleWasDown;
     private static bool _rightWasDown;
+    private static bool _toolRightWasDown;
     private static bool _enterWasDown;
     private static bool _invWasOpen;
     private static int _hotkeys;
@@ -80,8 +81,10 @@ public static class HakoniwaUi
         if (_backend is null || Main.gameMenu)
             return;
         Ui.Sync(
-            extraMouse: Chat.IsOpen || SignEditor.IsOpen || (Visible && SelectionOverlay.ShouldBlock()),
-            extraKeyboard: Chat.IsOpen || SignEditor.IsOpen || CheatState.WaitingSelectKey);
+            extraMouse: SignEditor.IsOpen,
+            extraKeyboard: SignEditor.IsOpen || CheatState.WaitingSelectKey || Chat.InputFocused,
+            blockGameMouse: Visible && !Main.mapFullscreen && FocusHelper.AllowInputProcessing,
+            skipImGuiKeyboard: Chat.IsOpen && !Chat.InputFocused);
     }
 
     private static void CaptureSelectKey(KeyboardState kb)
@@ -366,20 +369,26 @@ public static class HakoniwaUi
     private static void HandleChatToggle(KeyboardState kb)
     {
         bool enter = kb.IsKeyDown(Keys.Enter);
-        if (enter && !_enterWasDown)
+        if (enter && !_enterWasDown && !Main.editSign && !Main.editChest)
         {
-            if (!Chat.IsOpen && !Ui.Keyboard && !Main.editSign && !Main.editChest)
-                Chat.Open();
+            if (!Chat.IsOpen)
+            {
+                if (!Ui.Keyboard)
+                    Chat.Open();
+            }
+            else if (!Chat.InputFocused)
+                Chat.Focus();
         }
 
         _enterWasDown = enter;
 
-        // 如果游戏原生尝试打开聊天框，自动接管转为 ImGui 聊天输入
         if (Main.drawingPlayerChat)
         {
             Main.drawingPlayerChat = false;
             if (!Chat.IsOpen)
                 Chat.Open();
+            else if (!Chat.InputFocused)
+                Chat.Focus();
         }
     }
 
@@ -430,6 +439,8 @@ public static class HakoniwaUi
         if (!FocusHelper.AllowInputProcessing || Main.mapFullscreen || Chat.IsOpen || SignEditor.IsOpen)
         {
             _leftWasDown = true;
+            _toolRightWasDown = true;
+            EditorSession.Stroking = false;
             _lastScrollWheel = Mouse.GetState().ScrollWheelValue;
             return;
         }
@@ -442,7 +453,7 @@ public static class HakoniwaUi
         bool ctrl = kb.IsKeyDown(Keys.LeftControl) || kb.IsKeyDown(Keys.RightControl);
 
         // Ctrl + 滚轮动态调节笔刷大小
-        if (ctrl && scrollDelta != 0 && (EditorSession.Tool is EditorTool.Brush or EditorTool.Eraser || StudioIsOpen))
+        if (ctrl && scrollDelta != 0 && (EditorSession.Tool is EditorTool.Brush or EditorTool.Eraser || EditorSession.Tool == EditorTool.Shape && EditorSession.DrawKind == DrawKind.Line || StudioIsOpen))
         {
             int step = scrollDelta > 0 ? 1 : -1;
             int nextRadius = Math.Max(0, Math.Min(50, EditorSession.BrushRadius + step));
@@ -454,9 +465,24 @@ public static class HakoniwaUi
         }
 
         bool left = mouseState.LeftButton == ButtonState.Pressed;
+        bool right = mouseState.RightButton == ButtonState.Pressed;
         bool blocked = Visible && SelectionOverlay.Update(!Ui.Mouse);
-        if (!Ui.Mouse && !blocked && left && !_leftWasDown && EditorSession.Tool != EditorTool.Marquee)
-            EditorSession.ApplyToolAtCursor();
+        if (Visible && !Ui.Mouse && !blocked)
+        {
+            var tool = EditorSession.Tool;
+            EditorSession.CursorTile(out int tx, out int ty);
+            if (tool == EditorTool.Shape)
+            {
+                if (left && !_leftWasDown)
+                    EditorSession.BeginStroke(tx, ty);
+                else if (left && EditorSession.Stroking)
+                    EditorSession.DragStroke(tx, ty);
+            }
+            else if (right && !_toolRightWasDown && tool == EditorTool.Replace)
+                EditorSession.PickMatch(tx, ty);
+            else if (left && !_leftWasDown && tool != EditorTool.Marquee)
+                EditorSession.ApplyToolAtCursor();
+        }
 
         bool canHotkey = !Ui.Keyboard && ctrl;
         int hotkeys = 0;
@@ -473,5 +499,8 @@ public static class HakoniwaUi
         if ((pressed & 16) != 0) EditorSession.Redo();
         _hotkeys = hotkeys;
         _leftWasDown = left;
+        _toolRightWasDown = right;
+        if (!left && EditorSession.Stroking)
+            EditorSession.EndStroke();
     }
 }

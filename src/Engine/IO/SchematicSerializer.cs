@@ -11,10 +11,11 @@ namespace Hakoniwa.Engine.IO;
 public static class SchematicSerializer
 {
     private static readonly byte[] Magic = [0x48, 0x4B, 0x4E, 0x57];
-    private const ushort CurrentVersion = 0x0001;
+    private const ushort CurrentVersion = 0x0002;
+    private const ushort MinVersion = 0x0001;
     private const int HeaderBytes = 4 + 2 + 4 + 4 + 4 + 4 + 4 + 4;
 
-    public static byte[] Serialize(Schematic schematic, int compressionLevel = 3)
+    public static byte[] Serialize(Schematic schematic, int compressionLevel = 10)
     {
         if (schematic is null)
             throw new ArgumentNullException(nameof(schematic));
@@ -50,6 +51,12 @@ public static class SchematicSerializer
             byte[] compressedData = compressor.Wrap(rawBuffer).ToArray();
             writer.Write(compressedData.Length);
             writer.Write(compressedData);
+
+            byte[] entities = PackEntities(schematic);
+            byte[] packed = entities.Length == 0 ? [] : compressor.Wrap(entities).ToArray();
+            writer.Write(packed.Length);
+            if (packed.Length > 0)
+                writer.Write(packed);
         }
 
         return memory.ToArray();
@@ -70,7 +77,7 @@ public static class SchematicSerializer
             throw new InvalidDataException("Invalid Hakoniwa schematic magic header.");
 
         ushort version = reader.ReadUInt16();
-        if (version != CurrentVersion)
+        if (version < MinVersion || version > CurrentVersion)
             throw new NotSupportedException($"Unsupported schematic version: {version}");
 
         int width = reader.ReadInt32();
@@ -103,6 +110,18 @@ public static class SchematicSerializer
             throw new InvalidDataException($"Tile payload size mismatch: expected {rawByteSize}, got {rawBuffer.Length}.");
 
         CopyBytesToTiles(rawBuffer, schematic.Tiles);
+        if (version >= 0x0002 && memory.Position < memory.Length)
+        {
+            int packedLen = ReadPayloadLength(reader, memory, "entity payload");
+            if (packedLen > 0)
+            {
+                byte[] packed = reader.ReadBytes(packedLen);
+                using var entityDec = new Decompressor();
+                byte[] raw = entityDec.Unwrap(packed).ToArray();
+                UnpackEntities(schematic, raw);
+            }
+        }
+
         return schematic;
     }
 
@@ -150,6 +169,72 @@ public static class SchematicSerializer
         fixed (byte* s = src)
         fixed (TileDataBlock* dst = tiles)
             Buffer.MemoryCopy(s, dst, expected, expected);
+    }
+
+    private static byte[] PackEntities(Schematic schematic)
+    {
+        if (schematic.Entities.Count == 0)
+            return [];
+        using var memory = new MemoryStream();
+        using (var writer = new BinaryWriter(memory, Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(schematic.Entities.Count);
+            for (int i = 0; i < schematic.Entities.Count; i++)
+            {
+                var entity = schematic.Entities[i];
+                writer.Write((byte)entity.Kind);
+                writer.Write(entity.X);
+                writer.Write(entity.Y);
+                writer.Write(entity.Name ?? string.Empty);
+                writer.Write(entity.Text ?? string.Empty);
+                writer.Write(entity.TeType);
+                writer.Write(entity.Items.Length);
+                for (int n = 0; n < entity.Items.Length; n++)
+                {
+                    writer.Write(entity.Items[n].Type);
+                    writer.Write(entity.Items[n].Stack);
+                    writer.Write(entity.Items[n].Prefix);
+                }
+
+                writer.Write(entity.Extra.Length);
+                writer.Write(entity.Extra);
+            }
+        }
+
+        return memory.ToArray();
+    }
+
+    private static void UnpackEntities(Schematic schematic, byte[] raw)
+    {
+        using var memory = new MemoryStream(raw);
+        using var reader = new BinaryReader(memory, Encoding.UTF8);
+        int count = reader.ReadInt32();
+        if (count < 0 || count > schematic.Width * schematic.Height + 16)
+            throw new InvalidDataException("Entity count is out of range.");
+        schematic.Entities.Clear();
+        for (int i = 0; i < count; i++)
+        {
+            var entity = new SchematicEntity
+            {
+                Kind = (SchematicEntityKind)reader.ReadByte(),
+                X = reader.ReadInt32(),
+                Y = reader.ReadInt32(),
+                Name = reader.ReadString(),
+                Text = reader.ReadString(),
+                TeType = reader.ReadByte(),
+            };
+            int items = reader.ReadInt32();
+            if (items < 0 || items > 200)
+                throw new InvalidDataException("Entity item count is out of range.");
+            entity.Items = new SchematicItem[items];
+            for (int n = 0; n < items; n++)
+                entity.Items[n] = new SchematicItem(reader.ReadInt32(), reader.ReadInt32(), reader.ReadByte());
+            int extra = reader.ReadInt32();
+            if (extra < 0 || extra > raw.Length)
+                throw new InvalidDataException("Entity extra payload is invalid.");
+            entity.Extra = extra == 0 ? [] : reader.ReadBytes(extra);
+            schematic.Entities.Add(entity);
+        }
     }
 
     private sealed class SchematicMeta

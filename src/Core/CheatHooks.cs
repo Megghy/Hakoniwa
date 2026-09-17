@@ -9,6 +9,7 @@ using Terraria;
 using Terraria.DataStructures;
 using Terraria.GameInput;
 using Hakoniwa.Engine;
+using Terraria.GameContent.UI.Chat;
 using Terraria.Graphics.Light;
 
 namespace Hakoniwa.Core;
@@ -18,8 +19,10 @@ public static class CheatHooks
     public static event Action? PreUpdate;
     public static event Action? PostUpdate;
     public static bool BlockGameMouse;
+    public static bool BlockGameScroll;
     public static bool BlockGameKeyboard;
     public static bool WantTextInput;
+    public static bool HideVanillaChat;
 
     private static ILightingEngine? _vanillaLighting;
     private static bool _fullBrightApplied;
@@ -47,6 +50,13 @@ public static class CheatHooks
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.HandleIME)), HandleIME);
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.ClearHoverItem)), ClearHoverItem);
         hooks.RegisterDetour(Req(typeof(Lighting), nameof(Lighting.LightTiles), typeof(Rectangle)), LightTiles);
+        hooks.RegisterDetour(Req(typeof(RemadeChatMonitor), nameof(RemadeChatMonitor.DrawChat), typeof(bool)), DrawVanillaChat);
+    }
+
+    private static void DrawVanillaChat(Action<RemadeChatMonitor, bool> orig, RemadeChatMonitor self, bool drawing)
+    {
+        if (!HideVanillaChat)
+            orig(self, drawing);
     }
 
     private static MethodInfo Req(Type type, string name, params Type[] args)
@@ -266,7 +276,7 @@ public static class CheatHooks
 
         var kb = Keyboard.GetState();
         bool isCtrl = kb.IsKeyDown(Keys.LeftControl) || kb.IsKeyDown(Keys.RightControl);
-        if (isCtrl && (EditorSession.Tool is EditorTool.Brush or EditorTool.Eraser))
+        if (BlockGameScroll || isCtrl && (EditorSession.Tool is EditorTool.Brush or EditorTool.Eraser))
         {
             PlayerInput.ScrollWheelDelta = 0;
             PlayerInput.ScrollWheelDeltaForUI = 0;
@@ -282,8 +292,6 @@ public static class CheatHooks
         Main.mouseLeft = false;
         Main.mouseRight = false;
         Main.blockMouse = true;
-        PlayerInput.ScrollWheelDelta = 0;
-        PlayerInput.ScrollWheelDeltaForUI = 0;
         if (Main.myPlayer >= 0 && Main.player[Main.myPlayer].active)
             Main.player[Main.myPlayer].mouseInterface = true;
     }

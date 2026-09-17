@@ -116,6 +116,46 @@ public sealed class ToolEngineTests
     }
 
     [Fact]
+    public void CountHelpers_MatchPaintedGeometry()
+    {
+        Assert.Equal(5, ToolEngine.CountBrush(1, BrushShape.Circle));
+        Assert.Equal(9, ToolEngine.CountRectShape(0, 0, 2, 2, BrushShape.Square));
+        Assert.Equal(4, ToolEngine.CountLine(0, 0, 3, 0, 0, BrushShape.Square));
+        Assert.True(ToolEngine.CountRectShape(0, 0, 4, 4, BrushShape.Circle) < 25);
+    }
+
+    [Fact]
+    public void PaintLine_CoversEndpoints()
+    {
+        var world = new TileAccessor(8, 8);
+        Assert.Equal(4, ToolEngine.PaintLine(world, 1, 1, 4, 1, 0, BrushShape.Square, Stone(3)));
+        Assert.Equal(3, world.Get(1, 1).TileType);
+        Assert.Equal(3, world.Get(4, 1).TileType);
+        Assert.Equal(0, world.Get(1, 2).TileType);
+    }
+
+    [Fact]
+    public void PaintRect_FillsInclusiveBounds()
+    {
+        var world = new TileAccessor(8, 8);
+        Assert.Equal(9, ToolEngine.PaintRect(world, 1, 1, 3, 3, Stone(6)));
+        Assert.Equal(6, world.Get(1, 1).TileType);
+        Assert.Equal(6, world.Get(3, 3).TileType);
+        Assert.Equal(0, world.Get(4, 4).TileType);
+    }
+
+    [Fact]
+    public void Replace_OnlyMatchingLayer()
+    {
+        var world = new TileAccessor(4, 4);
+        ToolEngine.Paint(world, 1, 1, 0, BrushShape.Square, Stone(1));
+        ToolEngine.Paint(world, 2, 1, 0, BrushShape.Square, Stone(2));
+        Assert.Equal(1, ToolEngine.Replace(world, 0, 0, 4, 4, Stone(1), Stone(9), TileLayer.Tile));
+        Assert.Equal(9, world.Get(1, 1).TileType);
+        Assert.Equal(2, world.Get(2, 1).TileType);
+    }
+
+    [Fact]
     public void History_UndoRedoAndCapacityDrop()
     {
         var world = new TileAccessor(8, 8);

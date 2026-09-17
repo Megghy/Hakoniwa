@@ -50,9 +50,8 @@ public static class SelectionOverlay
     private static Schematic? _payload;
     private static bool _cutMove;
     private static string? _tip;
-    private static float _brushHudTimer;
 
-    public static void TriggerBrushHud() => _brushHudTimer = 1.3f;
+    public static void TriggerBrushHud() => EditorOverlay.TriggerBrushHud();
 
     public static bool ShouldBlock()
     {
@@ -106,7 +105,7 @@ public static class SelectionOverlay
         if (Main.gameMenu || Main.mapFullscreen || !FocusHelper.AllowInputProcessing)
             return;
 
-        DrawBrushPreview();
+        EditorOverlay.Draw();
 
         var sel = EditorSession.Selection;
         if (sel.Active)
@@ -118,94 +117,12 @@ public static class SelectionOverlay
             DrawShape(list, min, max, fill, line, sel.Shape);
             DrawHandles(list, min, max, line);
             DrawButtons(min, max);
+            int cells = ToolEngine.CountRectShape(sel.MinX, sel.MinY, sel.MaxX, sel.MaxY, sel.Shape);
+            EditorOverlay.DrawEdgeChip(min, max, $"{sel.Width} × {sel.Height}  ·  {cells} 格");
             SetCursor();
             if (_tip is not null)
                 ImGui.SetTooltip(_tip);
         }
-
-        DrawBrushHud();
-    }
-
-    private static void DrawBrushPreview()
-    {
-        if (Ui.Mouse || Main.gameMenu || Main.mapFullscreen || !FocusHelper.AllowInputProcessing)
-            return;
-        if (EditorSession.Tool is not (EditorTool.Brush or EditorTool.Eraser))
-            return;
-
-        int cx = (int)(Main.MouseWorld.X / 16f);
-        int cy = (int)(Main.MouseWorld.Y / 16f);
-        int r = EditorSession.BrushRadius;
-        var shape = EditorSession.BrushShape;
-        bool isEraser = EditorSession.Tool == EditorTool.Eraser;
-        var list = Ui.WorldList;
-        uint fill = isEraser ? 0x2E201018u : 0x2A10243Cu;
-        uint line = isEraser ? 0xFF5B40F4u : 0xFFF8BD38u;
-
-        for (int dy = -r; dy <= r; dy++)
-        {
-            for (int dx = -r; dx <= r; dx++)
-            {
-                if (!ToolEngine.InBrush(dx, dy, r, shape))
-                    continue;
-                WorldTileRect(cx + dx, cy + dy, cx + dx + 1, cy + dy + 1, out var min, out var max);
-                list.AddRectFilled(min, max, fill);
-                if (!ToolEngine.InBrush(dx, dy - 1, r, shape))
-                    list.AddLine(min, new Num.Vector2(max.X, min.Y), line, 2f);
-                if (!ToolEngine.InBrush(dx, dy + 1, r, shape))
-                    list.AddLine(new Num.Vector2(min.X, max.Y), max, line, 2f);
-                if (!ToolEngine.InBrush(dx - 1, dy, r, shape))
-                    list.AddLine(min, new Num.Vector2(min.X, max.Y), line, 2f);
-                if (!ToolEngine.InBrush(dx + 1, dy, r, shape))
-                    list.AddLine(new Num.Vector2(max.X, min.Y), max, line, 2f);
-            }
-        }
-
-        WorldTileRect(cx, cy, cx + 1, cy + 1, out var cMin, out var cMax);
-        list.AddRect(cMin, cMax, line, 0f, ImDrawFlags.None, 1f);
-    }
-
-    private static void DrawBrushHud()
-    {
-        if (_brushHudTimer <= 0f)
-            return;
-
-        _brushHudTimer -= Math.Max(1f / 60f, (float)Main.gameTimeCache.ElapsedGameTime.TotalSeconds);
-        float alpha = Math.Min(1f, _brushHudTimer / 0.25f);
-        if (alpha <= 0f)
-            return;
-
-        var mouse = MouseScreen();
-        var display = ImGui.GetIO().DisplaySize;
-        var hudSize = new Num.Vector2(160f, 48f);
-        var pos = mouse + new Num.Vector2(18f, 18f);
-        if (pos.X + hudSize.X > display.X - 10f) pos.X = mouse.X - hudSize.X - 12f;
-        if (pos.Y + hudSize.Y > display.Y - 10f) pos.Y = mouse.Y - hudSize.Y - 12f;
-
-        var list = ImGui.GetForegroundDrawList();
-        byte aByte = (byte)(alpha * 255);
-        uint bg = ((uint)(aByte * 240 / 255) << 24) | 0x000F111Eu;
-        uint border = ((uint)(aByte * 220 / 255) << 24) | (EditorSession.Tool == EditorTool.Eraser ? 0x00F87171u : 0x0038BDF8u);
-        uint borderInner = ((uint)(aByte * 180 / 255) << 24) | 0x001E293Bu;
-        uint textCol = ((uint)aByte << 24) | 0x00F1F5F9u;
-        uint accentCol = ((uint)aByte << 24) | (EditorSession.Tool == EditorTool.Eraser ? 0x00F87171u : 0x0038BDF8u);
-
-        // 像素卡片双层边框
-        list.AddRectFilled(pos, pos + hudSize, bg);
-        list.AddRect(pos, pos + hudSize, border, 0f, ImDrawFlags.None, 1.5f);
-        list.AddRect(pos + new Num.Vector2(2f, 2f), pos + hudSize - new Num.Vector2(2f, 2f), borderInner, 0f, ImDrawFlags.None, 1f);
-
-        bool isEraser = EditorSession.Tool == EditorTool.Eraser;
-        string icon = isEraser ? Icons.Eraser : Icons.Brush;
-        string toolName = isEraser ? "橡皮擦" : "笔刷";
-        Icons.DrawDirect(list, pos + new Num.Vector2(18f, 24f), icon, aByte, accentCol, 22f);
-
-        string shapeName = Ui.ShapeNames[(int)EditorSession.BrushShape];
-        string title = $"{toolName} · {shapeName}";
-        string sizeText = $"半径: {EditorSession.BrushRadius} ({EditorSession.BrushRadius * 2 + 1} 格)";
-
-        list.AddText(pos + new Num.Vector2(36f, 8f), textCol, title);
-        list.AddText(pos + new Num.Vector2(36f, 26f), accentCol, sizeText);
     }
 
     private static void OnPress(Num.Vector2 sp, int tx, int ty, bool mod)
@@ -213,7 +130,7 @@ public static class SelectionOverlay
         var sel = EditorSession.Selection;
         if (!sel.Active)
         {
-            if (!mod)
+            if (!mod && EditorSession.Tool != EditorTool.Marquee)
                 return;
             sel.Begin(tx, ty, EditorSession.SelectionShape);
             _drag = Drag.Create;

@@ -51,6 +51,90 @@ public static class ToolEngine
             : dx * dx + dy * dy <= 1.001f;
     }
 
+    public static int CountBrush(int radius, BrushShape shape)
+    {
+        if (radius < 0)
+            throw new ArgumentOutOfRangeException(nameof(radius));
+        int n = 0;
+        for (int dy = -radius; dy <= radius; dy++)
+        {
+            for (int dx = -radius; dx <= radius; dx++)
+            {
+                if (InBrush(dx, dy, radius, shape))
+                    n++;
+            }
+        }
+
+        return n;
+    }
+
+    public static int CountRectShape(int x0, int y0, int x1, int y1, BrushShape shape)
+    {
+        int minX = Math.Min(x0, x1);
+        int minY = Math.Min(y0, y1);
+        int maxX = Math.Max(x0, x1);
+        int maxY = Math.Max(y0, y1);
+        int n = 0;
+        for (int y = minY; y <= maxY; y++)
+        {
+            for (int x = minX; x <= maxX; x++)
+            {
+                if (InRectShape(x, y, minX, minY, maxX, maxY, shape))
+                    n++;
+            }
+        }
+
+        return n;
+    }
+
+    public static int CountLine(int x0, int y0, int x1, int y1, int radius, BrushShape shape)
+    {
+        if (radius < 0)
+            throw new ArgumentOutOfRangeException(nameof(radius));
+        var seen = new HashSet<long>();
+        ForEachLineCell(x0, y0, x1, y1, (cx, cy) =>
+        {
+            for (int dy = -radius; dy <= radius; dy++)
+            {
+                for (int dx = -radius; dx <= radius; dx++)
+                {
+                    if (InBrush(dx, dy, radius, shape))
+                        seen.Add(((long)(cx + dx) << 32) ^ (uint)(cy + dy));
+                }
+            }
+        });
+        return seen.Count;
+    }
+
+    public static void ForEachLineCell(int x0, int y0, int x1, int y1, Action<int, int> visit)
+    {
+        int x = x0;
+        int y = y0;
+        int dx = Math.Abs(x1 - x0);
+        int sx = x0 < x1 ? 1 : -1;
+        int dy = -Math.Abs(y1 - y0);
+        int sy = y0 < y1 ? 1 : -1;
+        int err = dx + dy;
+        while (true)
+        {
+            visit(x, y);
+            if (x == x1 && y == y1)
+                break;
+            int e2 = 2 * err;
+            if (e2 >= dy)
+            {
+                err += dy;
+                x += sx;
+            }
+
+            if (e2 <= dx)
+            {
+                err += dx;
+                y += sy;
+            }
+        }
+    }
+
     public static int Paint(
         ITileGrid world,
         int cx,
@@ -65,20 +149,7 @@ public static class ToolEngine
     {
         EnsureStroke(world, radius, layers, scatter, random);
         var changes = new List<TileChange>();
-        int painted = 0;
-
-        for (int y = cy - radius; y <= cy + radius; y++)
-        {
-            for (int x = cx - radius; x <= cx + radius; x++)
-            {
-                if (!world.InBounds(x, y) || !InBrush(x - cx, y - cy, radius, shape))
-                    continue;
-                if (scatter > 0 && random!.NextDouble() < scatter)
-                    continue;
-                painted += Apply(world, x, y, ApplyLayers(world.Get(x, y), stamp, layers), changes);
-            }
-        }
-
+        int painted = StampAround(world, cx, cy, radius, shape, stamp, layers, changes, scatter, random);
         history?.Push(changes);
         return painted;
     }
@@ -308,6 +379,108 @@ public static class ToolEngine
         return n;
     }
 
+    public static int PaintLine(
+        ITileGrid world,
+        int x0,
+        int y0,
+        int x1,
+        int y1,
+        int radius,
+        BrushShape shape,
+        in TileDataBlock stamp,
+        TileLayer layers = TileLayer.All,
+        HistoryStack? history = null)
+    {
+        EnsureStroke(world, radius, layers, 0, null);
+        var changes = new List<TileChange>();
+        var local = stamp;
+        int painted = 0;
+        ForEachLineCell(x0, y0, x1, y1, (x, y) =>
+            painted += StampAround(world, x, y, radius, shape, local, layers, changes));
+        history?.Push(changes);
+        return painted;
+    }
+
+    public static int PaintRect(
+        ITileGrid world,
+        int x0,
+        int y0,
+        int x1,
+        int y1,
+        in TileDataBlock stamp,
+        TileLayer layers = TileLayer.All,
+        HistoryStack? history = null,
+        BrushShape shape = BrushShape.Square)
+    {
+        if (world is null)
+            throw new ArgumentNullException(nameof(world));
+        if (layers == TileLayer.None)
+            throw new ArgumentException("Layer mask must select at least one layer.", nameof(layers));
+
+        int minX = Math.Min(x0, x1);
+        int minY = Math.Min(y0, y1);
+        int maxX = Math.Max(x0, x1);
+        int maxY = Math.Max(y0, y1);
+        var changes = new List<TileChange>();
+        int painted = 0;
+        for (int y = minY; y <= maxY; y++)
+        {
+            for (int x = minX; x <= maxX; x++)
+            {
+                if (!world.InBounds(x, y) || !InRectShape(x, y, minX, minY, maxX, maxY, shape))
+                    continue;
+                painted += Apply(world, x, y, ApplyLayers(world.Get(x, y), stamp, layers), changes);
+            }
+        }
+
+        history?.Push(changes);
+        return painted;
+    }
+
+    public static int Replace(
+        ITileGrid world,
+        int x,
+        int y,
+        int width,
+        int height,
+        in TileDataBlock match,
+        in TileDataBlock stamp,
+        TileLayer layers = TileLayer.All,
+        HistoryStack? history = null,
+        BrushShape shape = BrushShape.Square)
+    {
+        if (world is null)
+            throw new ArgumentNullException(nameof(world));
+        if (width <= 0)
+            throw new ArgumentOutOfRangeException(nameof(width));
+        if (height <= 0)
+            throw new ArgumentOutOfRangeException(nameof(height));
+        if (layers == TileLayer.None)
+            throw new ArgumentException("Layer mask must select at least one layer.", nameof(layers));
+
+        var changes = new List<TileChange>();
+        int replaced = 0;
+        int maxX = x + width - 1;
+        int maxY = y + height - 1;
+        for (int iy = 0; iy < height; iy++)
+        {
+            for (int ix = 0; ix < width; ix++)
+            {
+                int wx = x + ix;
+                int wy = y + iy;
+                if (!world.InBounds(wx, wy) || !InRectShape(wx, wy, x, y, maxX, maxY, shape))
+                    continue;
+                var current = world.Get(wx, wy);
+                if (!Matches(current, match, layers))
+                    continue;
+                replaced += Apply(world, wx, wy, ApplyLayers(current, stamp, layers), changes);
+            }
+        }
+
+        history?.Push(changes);
+        return replaced;
+    }
+
     public static TileDataBlock ApplyLayers(in TileDataBlock dest, in TileDataBlock stamp, TileLayer layers)
     {
         var result = dest;
@@ -385,6 +558,34 @@ public static class ToolEngine
         if ((layers & TileLayer.Liquid) != 0 && (a.Liquid != b.Liquid || a.LiquidType != b.LiquidType))
             return false;
         return layers != TileLayer.None;
+    }
+
+    private static int StampAround(
+        ITileGrid world,
+        int cx,
+        int cy,
+        int radius,
+        BrushShape shape,
+        in TileDataBlock stamp,
+        TileLayer layers,
+        List<TileChange> changes,
+        double scatter = 0,
+        Random? random = null)
+    {
+        int painted = 0;
+        for (int y = cy - radius; y <= cy + radius; y++)
+        {
+            for (int x = cx - radius; x <= cx + radius; x++)
+            {
+                if (!world.InBounds(x, y) || !InBrush(x - cx, y - cy, radius, shape))
+                    continue;
+                if (scatter > 0 && random!.NextDouble() < scatter)
+                    continue;
+                painted += Apply(world, x, y, ApplyLayers(world.Get(x, y), stamp, layers), changes);
+            }
+        }
+
+        return painted;
     }
 
     private static void EnsureStroke(ITileGrid world, int radius, TileLayer layers, double scatter, Random? random)

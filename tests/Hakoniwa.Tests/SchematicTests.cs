@@ -32,6 +32,42 @@ public sealed class SchematicTests
     }
 
     [Fact]
+    public void Serializer_RoundTripsEntitiesAndSurvivesRotate()
+    {
+        var source = CreateGrid();
+        source.Entities.Add(new SchematicEntity
+        {
+            Kind = SchematicEntityKind.Chest,
+            X = 1,
+            Y = 2,
+            Name = "loot",
+            Items = [new SchematicItem(2, 30, 0)],
+        });
+        source.Entities.Add(new SchematicEntity
+        {
+            Kind = SchematicEntityKind.Sign,
+            X = 0,
+            Y = 1,
+            Text = "hello",
+        });
+
+        var loaded = SchematicSerializer.Deserialize(SchematicSerializer.Serialize(source));
+        Assert.Equal(2, loaded.Entities.Count);
+        Assert.Equal(SchematicEntityKind.Chest, loaded.Entities[0].Kind);
+        Assert.Equal("loot", loaded.Entities[0].Name);
+        Assert.Equal(2, loaded.Entities[0].Items[0].Type);
+        Assert.Equal("hello", loaded.Entities[1].Text);
+
+        var rotated = TransformEngine.Rotate90Clockwise(source);
+        Assert.Equal((0, 1), (rotated.Entities[0].X, rotated.Entities[0].Y));
+        var restored = TransformEngine.Rotate90Clockwise(
+            TransformEngine.Rotate90Clockwise(
+                TransformEngine.Rotate90Clockwise(rotated)));
+        Assert.Equal(source.Entities[0].X, restored.Entities[0].X);
+        Assert.Equal(source.Entities[0].Y, restored.Entities[0].Y);
+    }
+
+    [Fact]
     public void Serializer_RoundTripsBytesAndFile()
     {
         var source = CreateGrid();

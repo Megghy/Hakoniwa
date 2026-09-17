@@ -53,7 +53,7 @@ public sealed class StudioWindow
                     DrawBuildTab();
                     break;
                 case 1:
-                    DrawWorldTab();
+                    WorldTab.Draw();
                     break;
                 case 2:
                     HakoniwaUi.ItemPicker.DrawContent(embedded: true);
@@ -189,7 +189,7 @@ public sealed class StudioWindow
 
         // 3. 笔刷配置与形态卡片
         Ui.Heading(Icons.Brush, "笔刷工具与形态配置 (Brush & Shape)");
-        ImGui.BeginChild("brush-settings-card", new Vector2(0, 140f), ImGuiChildFlags.Borders);
+        ImGui.BeginChild("brush-settings-card", new Vector2(0, 210f), ImGuiChildFlags.Borders);
         var bMin = ImGui.GetWindowPos();
         var bMax = bMin + ImGui.GetWindowSize();
         Ui.DrawPixelPanel(dl, bMin, bMax);
@@ -201,87 +201,56 @@ public sealed class StudioWindow
 
         ImGui.Spacing();
 
-        // 形状选择 Chips
+        if (EditorSession.Tool == EditorTool.Shape)
+        {
+            int draw = (int)EditorSession.DrawKind;
+            Ui.Chips("draw-chips", Ui.DrawNames.Length, ref draw, i => Ui.DrawNames[i], 24f);
+            EditorSession.DrawKind = (DrawKind)draw;
+            ImGui.Spacing();
+        }
+
         int shape = (int)EditorSession.BrushShape;
-        Ui.Chips("shape-chips", Ui.ShapeNames.Length, ref shape, i => $"形状: {Ui.ShapeNames[i]}", 24f);
+        Ui.Chips("shape-chips", Ui.ShapeNames.Length, ref shape, i => $"笔刷: {Ui.ShapeNames[i]}", 24f);
         EditorSession.BrushShape = (BrushShape)shape;
 
         ImGui.Spacing();
 
         // 半径调节滑块
         ImGui.SliderInt("笔刷半径", ref EditorSession.BrushRadius, 0, 50, $"{EditorSession.BrushRadius} (直径 {EditorSession.BrushRadius * 2 + 1} 砖)");
-        ImGui.TextColored(Ui.Accent, "💡 提示: 在世界中按住 Ctrl + 滚动鼠标滚轮 可实时调整笔刷大小并显示范围预览与提示窗。");
+        DrawLayerToggles();
+        var stamp = EditorSession.CurrentStamp();
+        ImGui.TextDisabled(EditorSession.HasStamp
+            ? $"图章 物块 {stamp.TileType} 墙 {stamp.WallType} 帧 {stamp.TileFrameX},{stamp.TileFrameY}"
+            : "图章来自手持物品（吸管可锁定世界格子）");
+        if (EditorSession.HasMatch)
+            ImGui.TextDisabled($"替换源 物块 {EditorSession.Match.TileType} 墙 {EditorSession.Match.WallType}");
+        ImGui.TextDisabled("Ctrl+滚轮调半径。替换：右键取样源，左键替换选区或可见范围。");
 
         ImGui.EndChild();
 
         ImGui.EndChild();
     }
 
-    private static void DrawWorldTab()
+    private static void DrawLayerToggles()
     {
-        Ui.BeginScroll("world-scroll");
+        var layers = EditorSession.Layers;
+        for (int i = 0; i < Ui.LayerNames.Length; i++)
+        {
+            if (i > 0)
+                ImGui.SameLine();
+            var flag = (TileLayer)(1 << i);
+            bool on = (layers & flag) != 0;
+            if (ImGui.Checkbox(Ui.LayerNames[i], ref on))
+            {
+                var next = on ? layers | flag : layers & ~flag;
+                if (next != TileLayer.None)
+                    layers = next;
+            }
+        }
 
-        float availW = ImGui.GetContentRegionAvail().X;
-        float halfW = (availW - 8f) * 0.5f;
-
-        // 左列卡片: 创造特权
-        ImGui.BeginChild("rules-card-left", new Vector2(halfW, 186f), ImGuiChildFlags.Borders);
-        var dl = ImGui.GetWindowDrawList();
-        Ui.DrawPixelPanel(dl, ImGui.GetWindowPos(), ImGui.GetWindowPos() + ImGui.GetWindowSize());
-
-        Ui.Heading(Icons.Shield, "创造特权 (Privileges)");
-        ImGui.Checkbox("上帝模式 (God Mode)", ref CheatState.GodMode);
-        ImGui.Checkbox("全图照明 (Full Bright)", ref CheatState.FullBright);
-        ImGui.Checkbox("穿墙模式 (No Clip)", ref CheatState.NoClip);
-        ImGui.Checkbox("自由悬空放置 (Free Placement)", ref CheatState.FreePlacement);
-        ImGui.Checkbox("快捷传送 (Click Teleport)", ref CheatState.ClickTeleport);
-
-        ImGui.EndChild();
-
-        ImGui.SameLine(0f, 8f);
-
-        // 右列卡片: 建筑辅助
-        ImGui.BeginChild("rules-card-right", new Vector2(halfW, 186f), ImGuiChildFlags.Borders);
-        Ui.DrawPixelPanel(dl, ImGui.GetWindowPos(), ImGui.GetWindowPos() + ImGui.GetWindowSize());
-
-        Ui.Heading(Icons.Infinity, "建筑辅助 (Assists)");
-        ImGui.Checkbox("无限放置范围 (Infinite Reach)", ref CheatState.InfiniteReach);
-        ImGui.Checkbox("无限物块消耗 (Infinite Items)", ref CheatState.InfiniteItems);
-        ImGui.Checkbox("锁定世界时间 (Freeze Time)", ref CheatState.FreezeTime);
-
-        ImGui.EndChild();
-
-        ImGui.Spacing();
-        ImGui.Separator();
-        ImGui.Spacing();
-
-        // 时间与昼夜卡片
-        Ui.Heading(Icons.Clock, "世界时间控制 (World Time & Phase)");
-        ImGui.BeginChild("time-card", new Vector2(0, 110f), ImGuiChildFlags.Borders);
-        Ui.DrawPixelPanel(dl, ImGui.GetWindowPos(), ImGui.GetWindowPos() + ImGui.GetWindowSize());
-
-        float time = GetTimeFraction();
-        if (ImGui.SliderFloat("时间进度 (0:00 - 24:00)", ref time, 0f, 1f, GetTimeString(time)))
-            SetTimeFraction(time);
-
-        ImGui.Spacing();
-
-        float btnW = (ImGui.GetContentRegionAvail().X - 12f) / 4f;
-        if (ImGui.Button("🌅 清晨 04:30", new Vector2(btnW, 26f))) SetTimeFraction(0f);
-        ImGui.SameLine(0f, 4f);
-        if (ImGui.Button("☀️ 正午 12:00", new Vector2(btnW, 26f))) SetTimeFraction(27000f / 86400f);
-        ImGui.SameLine(0f, 4f);
-        if (ImGui.Button("🌇 黄昏 19:30", new Vector2(btnW, 26f))) SetTimeFraction(54000f / 86400f);
-        ImGui.SameLine(0f, 4f);
-        if (ImGui.Button("🌙 午夜 00:00", new Vector2(btnW, 26f))) SetTimeFraction(70200f / 86400f);
-
-        ImGui.EndChild();
-
-        ImGui.Spacing();
-        ImGui.TextDisabled("提示: 开启快捷传送后，在大地图右键 或 在世界中按下鼠标中键 可瞬间传送到达对应位置。");
-
-        ImGui.EndChild();
+        EditorSession.Layers = layers;
     }
+
 
     private static void DrawCharacterTab()
     {
@@ -537,29 +506,4 @@ public sealed class StudioWindow
         ImGui.EndChild();
     }
 
-    private static float GetTimeFraction()
-    {
-        double cycle = Main.dayTime ? Main.time : 54000.0 + Main.time;
-        return (float)(cycle / 86400.0);
-    }
-
-    private static void SetTimeFraction(float fraction)
-    {
-        fraction = Math.Max(0f, Math.Min(1f, fraction));
-        double cycle = fraction * 86400.0;
-        if (cycle < 54000.0)
-            Main.SkipToTime((int)cycle, true);
-        else
-            Main.SkipToTime((int)(cycle - 54000.0), false);
-        CheatState.FrozenTime = Main.time;
-    }
-
-    private static string GetTimeString(float fraction)
-    {
-        double totalSeconds = fraction * 86400.0;
-        double clockSeconds = (totalSeconds + 16200.0) % 86400.0;
-        int hours = (int)(clockSeconds / 3600.0);
-        int minutes = (int)((clockSeconds % 3600.0) / 60.0);
-        return $"{hours:D2}:{minutes:D2}";
-    }
 }

@@ -21,6 +21,7 @@ public static class TransformEngine
             }
         }
 
+        CopyEntities(source, rotated, (x, y) => (h - 1 - y, x));
         return rotated;
     }
 
@@ -40,6 +41,7 @@ public static class TransformEngine
             }
         }
 
+        CopyEntities(source, rotated, (x, y) => (w - 1 - x, h - 1 - y));
         return rotated;
     }
 
@@ -59,6 +61,7 @@ public static class TransformEngine
             }
         }
 
+        CopyEntities(source, rotated, (x, y) => (y, w - 1 - x));
         return rotated;
     }
 
@@ -78,6 +81,7 @@ public static class TransformEngine
             }
         }
 
+        CopyEntities(source, flipped, (x, y) => (w - 1 - x, y));
         return flipped;
     }
 
@@ -97,6 +101,7 @@ public static class TransformEngine
             }
         }
 
+        CopyEntities(source, flipped, (x, y) => (x, h - 1 - y));
         return flipped;
     }
 
@@ -118,7 +123,21 @@ public static class TransformEngine
             }
         }
 
+        CopyEntities(source, moved, (x, y) => (x + dx, y + dy));
         return moved;
+    }
+
+    private static void CopyEntities(Schematic source, Schematic dest, Func<int, int, (int X, int Y)> map)
+    {
+        dest.Entities.Clear();
+        for (int i = 0; i < source.Entities.Count; i++)
+        {
+            var entity = source.Entities[i];
+            var (x, y) = map(entity.X, entity.Y);
+            if ((uint)x >= (uint)dest.Width || (uint)y >= (uint)dest.Height)
+                continue;
+            dest.Entities.Add(entity.Relocate(x, y));
+        }
     }
 
     private static Schematic CreateLike(Schematic source, int width, int height, int anchorX, int anchorY)

@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using System.Numerics;
+using Hakoniwa.Core;
 using Hexa.NET.ImGui;
 using Terraria;
 using Terraria.Audio;
 using Terraria.Chat;
+using Terraria.GameContent.UI.Chat;
 using Terraria.UI.Chat;
 
 namespace Hakoniwa.UI;
@@ -55,6 +58,7 @@ public sealed class ChatOverlay
     ];
 
     public bool IsOpen { get; private set; }
+    public bool InputFocused { get; private set; }
 
     private string _inputBuffer = string.Empty;
     private readonly List<string> _history = [];
@@ -63,6 +67,7 @@ public sealed class ChatOverlay
     private bool _ignoreEnter;
     private readonly List<CommandHint> _matchedCandidates = [];
     private int _selectedCandidateIndex;
+    private bool _scrollToBottom;
     private readonly ImGuiInputTextCallback _textCallback;
 
     public ChatOverlay()
@@ -73,16 +78,23 @@ public sealed class ChatOverlay
     public void Open()
     {
         IsOpen = true;
-        _focusRequested = true;
-        _ignoreEnter = true;
         _historyIndex = -1;
+        _scrollToBottom = true;
         Main.drawingPlayerChat = false;
         Main.clrInput();
+        Focus();
+    }
+
+    public void Focus()
+    {
+        _focusRequested = true;
+        _ignoreEnter = true;
     }
 
     public void Close()
     {
         IsOpen = false;
+        InputFocused = false;
         _inputBuffer = string.Empty;
         _historyIndex = -1;
         _matchedCandidates.Clear();
@@ -90,8 +102,12 @@ public sealed class ChatOverlay
 
     public unsafe void Draw()
     {
+        CheatHooks.HideVanillaChat = IsOpen && !Main.gameMenu;
         if (!IsOpen || Main.gameMenu)
+        {
+            InputFocused = false;
             return;
+        }
 
         var io = ImGui.GetIO();
         float width = Math.Min(io.DisplaySize.X - 40f, 760f);
@@ -100,11 +116,20 @@ public sealed class ChatOverlay
 
         UpdateCandidateMatches();
 
-        // 绘制命令补全浮窗
-        if (_matchedCandidates.Count > 0 && _inputBuffer.StartsWith("/"))
+        bool auto = _matchedCandidates.Count > 0 && _inputBuffer.StartsWith("/");
+        float autoH = auto ? Math.Min(6, _matchedCandidates.Count) * 26f + 16f : 0f;
+        int n = HistoryCount();
+        if (n > 0)
+        {
+            float histH = Math.Min(14, Math.Max(4, n)) * 22f + 16f;
+            float histY = posY - (auto ? autoH + 4f : 0f) - histH - 4f;
+            DrawHistory(new Vector2(posX, histY), width, histH);
+        }
+
+        if (auto)
             DrawAutocompletePopup(new Vector2(posX, posY), width);
 
-        // 绘制底部主聊天条
+        InputFocused = false;
         ImGui.SetNextWindowPos(new Vector2(posX, posY));
         ImGui.SetNextWindowSize(new Vector2(width, 44f));
         if (ImGui.Begin("##HakoniwaChatInputBar", Ui.Overlay | ImGuiWindowFlags.NoMove))
@@ -134,6 +159,7 @@ public sealed class ChatOverlay
                              ImGuiInputTextFlags.CallbackCompletion;
 
             bool submitted = ImGui.InputText("##chat_text_box", ref _inputBuffer, (UIntPtr)512, inputFlags, _textCallback);
+            InputFocused = ImGui.IsItemActive() || ImGui.IsItemFocused();
 
             ImGui.SameLine(0f, 8f);
             bool sendClicked = ImGui.Button("发送", new Vector2(56f, 24f));
@@ -154,7 +180,7 @@ public sealed class ChatOverlay
         ImGui.SetNextWindowPos(new Vector2(anchor.X, anchor.Y - popupHeight - 4f));
         ImGui.SetNextWindowSize(new Vector2(width, popupHeight));
 
-        if (ImGui.Begin("##ChatAutocompletePopup", Ui.Overlay | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoFocusOnAppearing))
+        if (ImGui.Begin("##ChatAutocompletePopup", Ui.Overlay | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoNav))
         {
             var dl = ImGui.GetWindowDrawList();
             var wp = ImGui.GetWindowPos();
@@ -182,6 +208,170 @@ public sealed class ChatOverlay
 
         ImGui.End();
     }
+
+    private static int HistoryCount() =>
+        Main.chatMonitor is RemadeChatMonitor monitor ? monitor._messages.Count : 0;
+
+    private void DrawHistory(Vector2 pos, float width, float height)
+    {
+        if (Main.chatMonitor is not RemadeChatMonitor monitor)
+            return;
+
+        ImGui.SetNextWindowPos(pos);
+        ImGui.SetNextWindowSize(new Vector2(width, height));
+        if (!ImGui.Begin("##HakoniwaChatHistory", Ui.Overlay | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoNav))
+        {
+            ImGui.End();
+            return;
+        }
+
+        var dl = ImGui.GetWindowDrawList();
+        var wp = ImGui.GetWindowPos();
+        var ws = ImGui.GetWindowSize();
+        Ui.DrawPixelPanel(dl, wp, wp + ws, 0xE00D111A, Ui.ChipLine, 0xFF141926);
+        ImGui.SetCursorPos(new Vector2(8f, 8f));
+        ImGui.BeginChild("##chat-hist", new Vector2(width - 16f, height - 16f));
+        var messages = monitor._messages;
+        for (int i = messages.Count - 1; i >= 0; i--)
+            DrawLine(messages[i], i);
+        if (_scrollToBottom)
+        {
+            ImGui.SetScrollHereY(1f);
+            _scrollToBottom = false;
+        }
+
+        ImGui.EndChild();
+        ImGui.End();
+    }
+
+    private void DrawLine(ChatMessageContainer msg, int i)
+    {
+        string display = Display(msg.OriginalText);
+        var c = msg._color;
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(c.R / 255f, c.G / 255f, c.B / 255f, 1f));
+        ImGui.PushID(i);
+        ImGui.Selectable(display);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(display);
+        if (ImGui.IsItemClicked(ImGuiMouseButton.Left))
+        {
+            Copy(display);
+            _focusRequested = true;
+        }
+        if (ImGui.BeginPopupContextItem("ctx"))
+        {
+            if (ImGui.MenuItem("复制"))
+                Copy(display);
+            string? name = PlayerName(msg.OriginalText);
+            if (name is not null)
+            {
+                if (ImGui.MenuItem("复制玩家名"))
+                    Copy(name);
+                var player = FindPlayer(name);
+                if (player is not null && player.whoAmI != Main.myPlayer && ImGui.MenuItem("传送到玩家"))
+                    TeleportTo(player);
+            }
+
+            ImGui.EndPopup();
+        }
+
+        ImGui.PopID();
+        ImGui.PopStyleColor();
+    }
+
+    private static void Copy(string text)
+    {
+        ImGui.SetClipboardText(text);
+        Notices.Post("已复制聊天");
+    }
+
+    private static void TeleportTo(Player target)
+    {
+        var player = Main.LocalPlayer;
+        player.velocity = Microsoft.Xna.Framework.Vector2.Zero;
+        player.Teleport(target.position, 1);
+        Notices.Post($"已传送到 {target.name}");
+    }
+
+    private static Player? FindPlayer(string name)
+    {
+        for (int i = 0; i < 255; i++)
+        {
+            var p = Main.player[i];
+            if (p.active && p.name == name)
+                return p;
+        }
+
+        return null;
+    }
+
+    internal static string? PlayerName(string raw)
+    {
+        int start = raw.IndexOf("[n:", StringComparison.Ordinal);
+        if (start >= 0)
+        {
+            int end = raw.IndexOf(']', start + 3);
+            if (end > start)
+                return Unescape(raw.Substring(start + 3, end - start - 3));
+        }
+
+        if (raw.Length > 2 && raw[0] == '<')
+        {
+            int end = raw.IndexOf('>');
+            if (end > 1)
+                return raw.Substring(1, end - 1);
+        }
+
+        return null;
+    }
+
+    internal static string Display(string raw)
+    {
+        if (raw.IndexOf('[') < 0)
+            return raw;
+
+        var sb = new StringBuilder(raw.Length);
+        for (int i = 0; i < raw.Length; i++)
+        {
+            if (raw[i] != '[')
+            {
+                sb.Append(raw[i]);
+                continue;
+            }
+
+            int close = raw.IndexOf(']', i + 1);
+            if (close < 0)
+            {
+                sb.Append(raw, i, raw.Length - i);
+                break;
+            }
+
+            string tag = raw.Substring(i + 1, close - i - 1);
+            int colon = tag.LastIndexOf(':');
+            if (colon < 0)
+            {
+                sb.Append(raw, i, close - i + 1);
+                i = close;
+                continue;
+            }
+
+            string kind = tag.Substring(0, colon);
+            string inner = Unescape(tag.Substring(colon + 1));
+            if (kind == "n" || kind.StartsWith("n/"))
+                sb.Append('<').Append(inner).Append('>');
+            else if (kind.Length > 0 && kind[0] == 'c')
+                sb.Append(inner);
+            else if (kind.Length > 0 && kind[0] == 'i' && int.TryParse(inner, out int id))
+                sb.Append('[').Append(Lang.GetItemNameValue(id)).Append(']');
+            else
+                sb.Append(inner);
+            i = close;
+        }
+
+        return sb.ToString();
+    }
+
+    private static string Unescape(string text) => text.Replace("\\[", "[").Replace("\\]", "]");
 
     private void UpdateCandidateMatches()
     {

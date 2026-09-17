@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Hakoniwa.Engine.Data;
 
@@ -16,6 +17,7 @@ public sealed class Schematic
     public int AnchorY { get; set; }
 
     public TileDataBlock[] Tiles { get; }
+    public List<SchematicEntity> Entities { get; } = [];
 
     public Schematic(int width, int height)
     {
@@ -54,6 +56,8 @@ public sealed class Schematic
             AnchorY = AnchorY
         };
         Array.Copy(Tiles, copy.Tiles, Tiles.Length);
+        for (int i = 0; i < Entities.Count; i++)
+            copy.Entities.Add(Entities[i].Clone());
         return copy;
     }
 }
