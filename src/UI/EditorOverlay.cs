@@ -45,14 +45,15 @@ internal static class EditorOverlay
     {
         if (!EditorSession.Stroking || EditorSession.Tool != EditorTool.Shape)
             return;
-        if (EditorSession.DrawKind is DrawKind.Rect or DrawKind.Circle)
+        if (EditorSession.DrawKind is DrawKind.Rect or DrawKind.Circle or DrawKind.RoundRect)
         {
             var shape = EditorSession.DrawKind == DrawKind.Circle ? BrushShape.Circle : BrushShape.Square;
+            int radius = EditorSession.DrawKind == DrawKind.RoundRect ? EditorSession.ShapeRadius : 0;
             int minX = Math.Min(EditorSession.StrokeX0, EditorSession.StrokeX1);
             int minY = Math.Min(EditorSession.StrokeY0, EditorSession.StrokeY1);
             int maxX = Math.Max(EditorSession.StrokeX0, EditorSession.StrokeX1);
             int maxY = Math.Max(EditorSession.StrokeY0, EditorSession.StrokeY1);
-            DrawShapeCells(minX, minY, maxX, maxY, shape, 0x3310A5FAu, 0xFFF8BD38u);
+            DrawShapeCells(minX, minY, maxX, maxY, shape, 0x3310A5FAu, 0xFFF8BD38u, radius);
             return;
         }
 
@@ -64,17 +65,23 @@ internal static class EditorOverlay
 
     private static void DrawReplacePreview()
     {
-        if (EditorSession.Tool != EditorTool.Replace || !EditorSession.HasMatch)
+        if (!EditorSession.ReplaceMode || !EditorSession.Selection.Active)
             return;
-        if (!EditorSession.ReplaceDomain(out int x, out int y, out int w, out int h, out var shape))
+        EditorSession.CursorTile(out int cx, out int cy);
+        if (!EditorSession.Selection.Contains(cx, cy) || !WorldTiles.Instance.InBounds(cx, cy))
             return;
+        var match = WorldTiles.Instance.Get(cx, cy);
+        int x = EditorSession.Selection.MinX;
+        int y = EditorSession.Selection.MinY;
+        int w = EditorSession.Selection.Width;
+        int h = EditorSession.Selection.Height;
+        var shape = EditorSession.Selection.Shape;
         EditorSession.VisibleTiles(out int vx, out int vy, out int vw, out int vh);
         int x0 = Math.Max(x, vx);
         int y0 = Math.Max(y, vy);
         int x1 = Math.Min(x + w - 1, vx + vw - 1);
         int y1 = Math.Min(y + h - 1, vy + vh - 1);
         var world = WorldTiles.Instance;
-        var match = EditorSession.Match;
         var layers = EditorSession.Layers;
         var list = Ui.WorldList;
         for (int ty = y0; ty <= y1; ty++)
@@ -133,6 +140,7 @@ internal static class EditorOverlay
         {
             DrawKind.Line => ToolEngine.CountLine(EditorSession.StrokeX0, EditorSession.StrokeY0, EditorSession.StrokeX1, EditorSession.StrokeY1, EditorSession.BrushRadius, EditorSession.BrushShape),
             DrawKind.Circle => ToolEngine.CountRectShape(EditorSession.StrokeX0, EditorSession.StrokeY0, EditorSession.StrokeX1, EditorSession.StrokeY1, BrushShape.Circle),
+            DrawKind.RoundRect => ToolEngine.CountRectShape(EditorSession.StrokeX0, EditorSession.StrokeY0, EditorSession.StrokeX1, EditorSession.StrokeY1, BrushShape.Square, EditorSession.ShapeRadius),
             _ => ToolEngine.CountRectShape(EditorSession.StrokeX0, EditorSession.StrokeY0, EditorSession.StrokeX1, EditorSession.StrokeY1, BrushShape.Square),
         };
         DrawMouseChip($"{Ui.DrawNames[(int)EditorSession.DrawKind]}  {w} × {h}", $"{n} 格");
@@ -142,9 +150,10 @@ internal static class EditorOverlay
     {
         var size = ImGui.CalcTextSize(text) + new Num.Vector2(14f, 8f);
         var display = ImGui.GetIO().DisplaySize;
-        var pos = new Num.Vector2((min.X + max.X - size.X) * 0.5f, max.Y + 28f);
+        float below = EditorSession.Pasting ? 48f : 36f;
+        var pos = new Num.Vector2((min.X + max.X - size.X) * 0.5f, max.Y + below);
         if (pos.Y + size.Y > display.Y - 4f)
-            pos.Y = min.Y - size.Y - 28f;
+            pos.Y = min.Y - size.Y - below;
         pos.X = Math.Max(4f, Math.Min(pos.X, display.X - size.X - 4f));
         pos.Y = Math.Max(4f, Math.Min(pos.Y, display.Y - size.Y - 4f));
         var list = Ui.WorldList;
@@ -161,6 +170,12 @@ internal static class EditorOverlay
         float alpha = Math.Min(1f, _brushHudTimer / 0.25f);
         if (alpha <= 0f)
             return;
+        if (EditorSession.Tool == EditorTool.Shape && EditorSession.DrawKind == DrawKind.RoundRect)
+        {
+            DrawMouseChip("圆角矩形", $"圆角 {EditorSession.ShapeRadius}");
+            return;
+        }
+
         int cells = ToolEngine.CountBrush(EditorSession.BrushRadius, EditorSession.BrushShape);
         bool isEraser = EditorSession.Tool == EditorTool.Eraser;
         DrawMouseChip(
@@ -193,7 +208,7 @@ internal static class EditorOverlay
         list.AddText(pos + new Num.Vector2(8f, 24f), accentCol, detail);
     }
 
-    private static void DrawShapeCells(int minX, int minY, int maxX, int maxY, BrushShape shape, uint fill, uint line)
+    private static void DrawShapeCells(int minX, int minY, int maxX, int maxY, BrushShape shape, uint fill, uint line, int cornerRadius = 0)
     {
         EditorSession.VisibleTiles(out int vx, out int vy, out int vw, out int vh);
         int x0 = Math.Max(minX, vx);
@@ -205,21 +220,26 @@ internal static class EditorOverlay
         {
             for (int x = x0; x <= x1; x++)
             {
-                if (!ToolEngine.InRectShape(x, y, minX, minY, maxX, maxY, shape))
+                if (!InDrawShape(x, y, minX, minY, maxX, maxY, shape, cornerRadius))
                     continue;
                 WorldTileRect(x, y, x + 1, y + 1, out var min, out var max);
                 list.AddRectFilled(min, max, fill);
-                if (!ToolEngine.InRectShape(x, y - 1, minX, minY, maxX, maxY, shape))
+                if (!InDrawShape(x, y - 1, minX, minY, maxX, maxY, shape, cornerRadius))
                     list.AddLine(min, new Num.Vector2(max.X, min.Y), line, 2f);
-                if (!ToolEngine.InRectShape(x, y + 1, minX, minY, maxX, maxY, shape))
+                if (!InDrawShape(x, y + 1, minX, minY, maxX, maxY, shape, cornerRadius))
                     list.AddLine(new Num.Vector2(min.X, max.Y), max, line, 2f);
-                if (!ToolEngine.InRectShape(x - 1, y, minX, minY, maxX, maxY, shape))
+                if (!InDrawShape(x - 1, y, minX, minY, maxX, maxY, shape, cornerRadius))
                     list.AddLine(min, new Num.Vector2(min.X, max.Y), line, 2f);
-                if (!ToolEngine.InRectShape(x + 1, y, minX, minY, maxX, maxY, shape))
+                if (!InDrawShape(x + 1, y, minX, minY, maxX, maxY, shape, cornerRadius))
                     list.AddLine(new Num.Vector2(max.X, min.Y), max, line, 2f);
             }
         }
     }
+
+    private static bool InDrawShape(int x, int y, int minX, int minY, int maxX, int maxY, BrushShape shape, int cornerRadius) =>
+        cornerRadius > 0
+            ? ToolEngine.InRoundRect(x, y, minX, minY, maxX, maxY, cornerRadius)
+            : ToolEngine.InRectShape(x, y, minX, minY, maxX, maxY, shape);
 
     private static void DrawBrushCells(int cx, int cy, int r, BrushShape shape, uint fill, uint line)
     {

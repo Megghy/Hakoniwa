@@ -51,6 +51,24 @@ public static class ToolEngine
             : dx * dx + dy * dy <= 1.001f;
     }
 
+    public static bool InRoundRect(int x, int y, int minX, int minY, int maxX, int maxY, int radius)
+    {
+        if (x < minX || x > maxX || y < minY || y > maxY)
+            return false;
+        if (radius < 0)
+            throw new ArgumentOutOfRangeException(nameof(radius));
+        int r = Math.Min(radius, Math.Min(maxX - minX + 1, maxY - minY + 1) / 2);
+        if (r <= 0)
+            return true;
+        if (x >= minX + r && x <= maxX - r || y >= minY + r && y <= maxY - r)
+            return true;
+        int cx = x < minX + r ? minX + r : maxX - r;
+        int cy = y < minY + r ? minY + r : maxY - r;
+        int dx = x - cx;
+        int dy = y - cy;
+        return (long)dx * dx + (long)dy * dy <= (long)r * r;
+    }
+
     public static int CountBrush(int radius, BrushShape shape)
     {
         if (radius < 0)
@@ -68,7 +86,7 @@ public static class ToolEngine
         return n;
     }
 
-    public static int CountRectShape(int x0, int y0, int x1, int y1, BrushShape shape)
+    public static int CountRectShape(int x0, int y0, int x1, int y1, BrushShape shape, int cornerRadius = 0)
     {
         int minX = Math.Min(x0, x1);
         int minY = Math.Min(y0, y1);
@@ -79,7 +97,9 @@ public static class ToolEngine
         {
             for (int x = minX; x <= maxX; x++)
             {
-                if (InRectShape(x, y, minX, minY, maxX, maxY, shape))
+                if (cornerRadius > 0
+                    ? InRoundRect(x, y, minX, minY, maxX, maxY, cornerRadius)
+                    : InRectShape(x, y, minX, minY, maxX, maxY, shape))
                     n++;
             }
         }
@@ -258,7 +278,8 @@ public static class ToolEngine
         int originX,
         int originY,
         TileLayer layers = TileLayer.All,
-        HistoryStack? history = null)
+        HistoryStack? history = null,
+        bool skipAir = false)
     {
         if (world is null)
             throw new ArgumentNullException(nameof(world));
@@ -278,7 +299,7 @@ public static class ToolEngine
                 if (!world.InBounds(wx, wy))
                     continue;
                 var stamp = schematic[ix, iy];
-                if (stamp.Skip)
+                if (stamp.Skip || skipAir && IsVacant(stamp))
                     continue;
                 pasted += Apply(world, wx, wy, ApplyLayers(world.Get(wx, wy), stamp, layers), changes);
             }
@@ -410,12 +431,15 @@ public static class ToolEngine
         in TileDataBlock stamp,
         TileLayer layers = TileLayer.All,
         HistoryStack? history = null,
-        BrushShape shape = BrushShape.Square)
+        BrushShape shape = BrushShape.Square,
+        int cornerRadius = 0)
     {
         if (world is null)
             throw new ArgumentNullException(nameof(world));
         if (layers == TileLayer.None)
             throw new ArgumentException("Layer mask must select at least one layer.", nameof(layers));
+        if (cornerRadius < 0)
+            throw new ArgumentOutOfRangeException(nameof(cornerRadius));
 
         int minX = Math.Min(x0, x1);
         int minY = Math.Min(y0, y1);
@@ -427,7 +451,12 @@ public static class ToolEngine
         {
             for (int x = minX; x <= maxX; x++)
             {
-                if (!world.InBounds(x, y) || !InRectShape(x, y, minX, minY, maxX, maxY, shape))
+                if (!world.InBounds(x, y))
+                    continue;
+                bool inside = cornerRadius > 0
+                    ? InRoundRect(x, y, minX, minY, maxX, maxY, cornerRadius)
+                    : InRectShape(x, y, minX, minY, maxX, maxY, shape);
+                if (!inside)
                     continue;
                 painted += Apply(world, x, y, ApplyLayers(world.Get(x, y), stamp, layers), changes);
             }
@@ -544,6 +573,9 @@ public static class ToolEngine
 
         return result;
     }
+
+    public static bool IsVacant(in TileDataBlock tile) =>
+        !tile.HasTile && tile.WallType == 0 && tile.Liquid == 0;
 
     public static bool Matches(in TileDataBlock a, in TileDataBlock b, TileLayer layers)
     {

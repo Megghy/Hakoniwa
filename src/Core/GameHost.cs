@@ -23,6 +23,7 @@ public static class GameHost
 
         CheatState.Load();
         InventoryPacks.Load();
+        CharacterPacks.Load();
         using var hooks = new HookManager();
         CheatHooks.Install(hooks);
         ItemTooltipExtra.Install(hooks);

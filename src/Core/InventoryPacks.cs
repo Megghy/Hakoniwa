@@ -61,10 +61,21 @@ public static class InventoryPacks
     public static void Add(Player player)
     {
         Capture(player);
-        _packs.Add(new Pack { Name = Unique("背包") });
+        _packs.Add(new Pack { Name = Unique("背包"), Items = [] });
         Active = _packs.Count - 1;
+        Apply(player);
+        Save();
+        Recipe.UpdateRecipeList();
+        Sync(player);
+        Notices.Post($"已新建空背包 {_packs[Active].Name}");
+    }
+
+    public static void SaveActive(Player player)
+    {
+        if ((uint)Active >= (uint)_packs.Count)
+            return;
         Capture(player);
-        Notices.Post($"已新建 {_packs[Active].Name}");
+        Notices.Post($"已保存 {_packs[Active].Name}");
     }
 
     public static void Remove(Player player, int index)

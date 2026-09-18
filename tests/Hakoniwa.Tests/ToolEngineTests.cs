@@ -96,6 +96,22 @@ public sealed class ToolEngineTests
     }
 
     [Fact]
+    public void Paste_SkipAirKeepsExisting()
+    {
+        var world = new TileAccessor(4, 4);
+        ToolEngine.Paint(world, 1, 1, 0, BrushShape.Square, Stone(3));
+        var schem = new Schematic(2, 1);
+        schem[0, 0] = Stone(9);
+        Assert.Equal(1, ToolEngine.Paste(world, schem, 0, 1, skipAir: true));
+        Assert.Equal(9, world.Get(0, 1).TileType);
+        Assert.Equal(3, world.Get(1, 1).TileType);
+
+        Assert.Equal(1, ToolEngine.Paste(world, schem, 0, 1));
+        Assert.Equal(9, world.Get(0, 1).TileType);
+        Assert.False(world.Get(1, 1).HasTile);
+    }
+
+    [Fact]
     public void Relocate_CutsSourceAndPastesDest()
     {
         var world = new TileAccessor(6, 6);
@@ -219,6 +235,17 @@ public sealed class ToolEngineTests
         selection.DragTo(6, 6);
         Assert.True(selection.Contains(4, 4));
         Assert.False(selection.Contains(2, 2));
+    }
+
+    [Fact]
+    public void RoundRect_DropsOutsideCorners()
+    {
+        Assert.Equal(16, ToolEngine.CountRectShape(0, 0, 3, 3, BrushShape.Square));
+        Assert.Equal(12, ToolEngine.CountRectShape(0, 0, 3, 3, BrushShape.Square, 1));
+        Assert.False(ToolEngine.InRoundRect(0, 0, 0, 0, 3, 3, 1));
+        Assert.True(ToolEngine.InRoundRect(1, 0, 0, 0, 3, 3, 1));
+        var world = new TileAccessor(8, 8);
+        Assert.Equal(12, ToolEngine.PaintRect(world, 0, 0, 3, 3, Stone(1), cornerRadius: 1));
     }
 
     private static TileDataBlock Stone(ushort type)

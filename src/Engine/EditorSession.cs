@@ -12,11 +12,9 @@ public enum EditorTool
     None = -1,
     Marquee = 0,
     Brush = 1,
-    Fill = 2,
-    Eraser = 3,
-    Eyedropper = 4,
-    Replace = 5,
-    Shape = 6,
+    Eraser = 2,
+    Eyedropper = 3,
+    Shape = 4,
 }
 
 public enum DrawKind
@@ -24,6 +22,7 @@ public enum DrawKind
     Line = 0,
     Rect = 1,
     Circle = 2,
+    RoundRect = 3,
 }
 
 public static class EditorSession
@@ -47,17 +46,30 @@ public static class EditorSession
     public static BrushShape BrushShape = BrushShape.Circle;
     public static BrushShape SelectionShape = BrushShape.Square;
     public static DrawKind DrawKind;
+    public static int ShapeRadius = 4;
     public static TileLayer Layers = TileLayer.All;
     public static TileDataBlock Stamp;
     public static bool HasStamp;
-    public static TileDataBlock Match;
-    public static bool HasMatch;
+    public static bool ReplaceMode;
+    public static bool PasteSkipAir;
     public static bool Stroking;
     public static int StrokeX0, StrokeY0, StrokeX1, StrokeY1;
 
     private static KeyboardState _keys;
 
     public static TileDataBlock CurrentStamp() => HasStamp ? Stamp : FromHeld();
+
+    public static TileLayer ActiveLayers()
+    {
+        if (HasStamp)
+            return Layers;
+        var item = Held();
+        TileLayer held = 0;
+        if (item.createTile >= 0) held |= TileLayer.Tile;
+        if (item.createWall > 0) held |= TileLayer.Wall;
+        if (item.paint > 0) held |= TileLayer.Paint;
+        return held == 0 ? Layers : Layers & held;
+    }
 
     public static void SyncKeys(KeyboardState kb) => _keys = kb;
 
@@ -114,8 +126,13 @@ public static class EditorSession
     {
         if (Clipboard is null || !Main.LocalPlayer.active)
             return;
+        CursorTile(out int x, out int y);
+        int ox = x - Clipboard.AnchorX;
+        int oy = y - Clipboard.AnchorY;
+        Selection.Set(ox, oy, ox + Clipboard.Width - 1, oy + Clipboard.Height - 1);
+        ReplaceMode = false;
         if (!Pasting)
-            Notices.Post("左键放置，右键或 Esc 取消");
+            Notices.Post("预览粘贴：可移动、翻转，确认后写入");
         Pasting = true;
     }
 
@@ -123,12 +140,13 @@ public static class EditorSession
 
     public static void CommitPaste()
     {
-        if (!Pasting || Clipboard is null || !Main.LocalPlayer.active)
+        if (!Pasting || Clipboard is null || !Main.LocalPlayer.active || !Selection.Active)
             return;
-        CursorTile(out int x, out int y);
-        ToolEngine.Paste(WorldTiles.Instance, Clipboard, x, y, Layers, History);
+        int x = Selection.MinX + Clipboard.AnchorX;
+        int y = Selection.MinY + Clipboard.AnchorY;
+        ToolEngine.Paste(WorldTiles.Instance, Clipboard, x, y, Layers, History, PasteSkipAir);
         SchematicWorld.Paste(Clipboard, x, y);
-        WorldTiles.Refresh(x - Clipboard.AnchorX, y - Clipboard.AnchorY, Clipboard.Width, Clipboard.Height);
+        WorldTiles.Refresh(Selection.MinX, Selection.MinY, Clipboard.Width, Clipboard.Height);
         Pasting = false;
         Notices.Post($"已粘贴 {Clipboard.Width}x{Clipboard.Height}");
     }
@@ -150,7 +168,8 @@ public static class EditorSession
         if (Clipboard is null)
             return;
         Clipboard = TransformEngine.FlipHorizontal(Clipboard);
-        Notices.Post("剪贴板已水平翻转");
+        FitPasteSelection();
+        Notices.Post("已水平翻转");
     }
 
     public static void FlipVertical()
@@ -158,7 +177,8 @@ public static class EditorSession
         if (Clipboard is null)
             return;
         Clipboard = TransformEngine.FlipVertical(Clipboard);
-        Notices.Post("剪贴板已垂直翻转");
+        FitPasteSelection();
+        Notices.Post("已垂直翻转");
     }
 
     public static void Rotate90()
@@ -166,7 +186,17 @@ public static class EditorSession
         if (Clipboard is null)
             return;
         Clipboard = TransformEngine.Rotate90Clockwise(Clipboard);
-        Notices.Post("剪贴板已旋转 90°");
+        FitPasteSelection();
+        Notices.Post("已旋转 90°");
+    }
+
+    private static void FitPasteSelection()
+    {
+        if (!Pasting || Clipboard is null || !Selection.Active)
+            return;
+        int x = Selection.MinX;
+        int y = Selection.MinY;
+        Selection.Set(x, y, x + Clipboard.Width - 1, y + Clipboard.Height - 1);
     }
 
     public static void Undo()
@@ -232,17 +262,11 @@ public static class EditorSession
             case EditorTool.Brush:
                 PaintAt(x, y);
                 break;
-            case EditorTool.Fill:
-                FillAt(x, y);
-                break;
             case EditorTool.Eraser:
                 EraseAt(x, y);
                 break;
             case EditorTool.Eyedropper:
                 PickStamp(x, y);
-                break;
-            case EditorTool.Replace:
-                ReplaceAt();
                 break;
         }
     }
@@ -256,15 +280,6 @@ public static class EditorSession
         Notices.Post($"已取样 物块 {Stamp.TileType} 墙 {Stamp.WallType}");
     }
 
-    public static void PickMatch(int x, int y)
-    {
-        if (!WorldTiles.Instance.InBounds(x, y))
-            return;
-        Match = WorldTiles.Instance.Get(x, y);
-        HasMatch = true;
-        Notices.Post($"替换源 物块 {Match.TileType} 墙 {Match.WallType}");
-    }
-
     public static void BeginStroke(int x, int y)
     {
         Stroking = true;
@@ -274,23 +289,49 @@ public static class EditorSession
 
     public static void DragStroke(int x, int y)
     {
-        StrokeX1 = x;
-        StrokeY1 = y;
+        if (SquareStroke())
+            SnapSquare(x, y);
+        else
+        {
+            StrokeX1 = x;
+            StrokeY1 = y;
+        }
+    }
+
+    private static bool SquareStroke()
+    {
+        if (DrawKind is not (DrawKind.Rect or DrawKind.Circle or DrawKind.RoundRect))
+            return false;
+        var kb = Keyboard.GetState();
+        return kb.IsKeyDown(Keys.LeftShift) || kb.IsKeyDown(Keys.RightShift);
+    }
+
+    private static void SnapSquare(int x, int y)
+    {
+        int dx = x - StrokeX0;
+        int dy = y - StrokeY0;
+        int side = Math.Max(Math.Abs(dx), Math.Abs(dy));
+        StrokeX1 = StrokeX0 + (dx < 0 ? -side : side);
+        StrokeY1 = StrokeY0 + (dy < 0 ? -side : side);
     }
 
     public static void EndStroke()
     {
         if (!Stroking)
             return;
+        if (SquareStroke())
+            SnapSquare(StrokeX1, StrokeY1);
         Stroking = false;
         var stamp = CurrentStamp();
-        if (Tool != EditorTool.Shape)
+        var layers = ActiveLayers();
+        if (Tool != EditorTool.Shape || layers == TileLayer.None)
             return;
         int n = DrawKind switch
         {
-            DrawKind.Line => ToolEngine.PaintLine(WorldTiles.Instance, StrokeX0, StrokeY0, StrokeX1, StrokeY1, BrushRadius, BrushShape, stamp, Layers, History),
-            DrawKind.Rect => ToolEngine.PaintRect(WorldTiles.Instance, StrokeX0, StrokeY0, StrokeX1, StrokeY1, stamp, Layers, History),
-            DrawKind.Circle => ToolEngine.PaintRect(WorldTiles.Instance, StrokeX0, StrokeY0, StrokeX1, StrokeY1, stamp, Layers, History, BrushShape.Circle),
+            DrawKind.Line => ToolEngine.PaintLine(WorldTiles.Instance, StrokeX0, StrokeY0, StrokeX1, StrokeY1, BrushRadius, BrushShape, stamp, layers, History),
+            DrawKind.Rect => ToolEngine.PaintRect(WorldTiles.Instance, StrokeX0, StrokeY0, StrokeX1, StrokeY1, stamp, layers, History),
+            DrawKind.Circle => ToolEngine.PaintRect(WorldTiles.Instance, StrokeX0, StrokeY0, StrokeX1, StrokeY1, stamp, layers, History, BrushShape.Circle),
+            DrawKind.RoundRect => ToolEngine.PaintRect(WorldTiles.Instance, StrokeX0, StrokeY0, StrokeX1, StrokeY1, stamp, layers, History, BrushShape.Square, ShapeRadius),
             _ => 0,
         };
         if (n <= 0)
@@ -331,34 +372,42 @@ public static class EditorSession
         h = Math.Max(0, y2 - y + 1);
     }
 
-    public static bool ReplaceDomain(out int x, out int y, out int w, out int h, out BrushShape shape)
+    public static void FillSelection()
     {
-        if (Selection.Active)
-        {
-            x = Selection.MinX;
-            y = Selection.MinY;
-            w = Selection.Width;
-            h = Selection.Height;
-            shape = Selection.Shape;
-            return w > 0 && h > 0;
-        }
+        if (!Selection.Active || !TryHandStamp(out var stamp))
+            return;
+        var layers = ActiveLayers();
+        if (layers == TileLayer.None)
+            return;
+        int n = ToolEngine.PaintRect(WorldTiles.Instance, Selection.MinX, Selection.MinY, Selection.MaxX, Selection.MaxY, stamp, layers, History, Selection.Shape);
+        if (n <= 0)
+            return;
+        WorldTiles.Refresh(Selection.MinX, Selection.MinY, Selection.Width, Selection.Height);
+        Notices.Post($"已填充 {n} 格");
+    }
 
-        VisibleTiles(out x, out y, out w, out h);
-        shape = BrushShape.Square;
-        return w > 0 && h > 0;
+    public static void ReplaceSelectionAt(int x, int y)
+    {
+        if (!ReplaceMode || !Selection.Contains(x, y) || !TryHandStamp(out var stamp))
+            return;
+        var layers = ActiveLayers();
+        if (layers == TileLayer.None)
+            return;
+        var match = WorldTiles.Instance.Get(x, y);
+        int n = ToolEngine.Replace(WorldTiles.Instance, Selection.MinX, Selection.MinY, Selection.Width, Selection.Height, match, stamp, layers, History, Selection.Shape);
+        if (n <= 0)
+            return;
+        WorldTiles.Refresh(Selection.MinX, Selection.MinY, Selection.Width, Selection.Height);
+        Notices.Post($"已替换 {n} 格");
     }
 
     private static void PaintAt(int x, int y)
     {
-        ToolEngine.Paint(WorldTiles.Instance, x, y, BrushRadius, BrushShape, CurrentStamp(), Layers, History);
+        var layers = ActiveLayers();
+        if (layers == TileLayer.None)
+            return;
+        ToolEngine.Paint(WorldTiles.Instance, x, y, BrushRadius, BrushShape, CurrentStamp(), layers, History);
         WorldTiles.Refresh(x - BrushRadius, y - BrushRadius, BrushRadius * 2 + 1, BrushRadius * 2 + 1);
-    }
-
-    private static void FillAt(int x, int y)
-    {
-        if (ToolEngine.FloodFill(WorldTiles.Instance, x, y, CurrentStamp(), Layers, History) > 0 &&
-            History.TryGetLastBounds(out int fx, out int fy, out int fw, out int fh))
-            WorldTiles.Refresh(fx, fy, fw, fh);
     }
 
     private static void EraseAt(int x, int y)
@@ -367,28 +416,25 @@ public static class EditorSession
         WorldTiles.Refresh(x - BrushRadius, y - BrushRadius, BrushRadius * 2 + 1, BrushRadius * 2 + 1);
     }
 
-    private static void ReplaceAt()
-    {
-        if (!HasMatch)
-        {
-            CursorTile(out int x, out int y);
-            PickMatch(x, y);
-            return;
-        }
-
-        if (!ReplaceDomain(out int dx, out int dy, out int dw, out int dh, out var shape))
-            return;
-        int n = ToolEngine.Replace(WorldTiles.Instance, dx, dy, dw, dh, Match, CurrentStamp(), Layers, History, shape);
-        if (n <= 0)
-            return;
-        WorldTiles.Refresh(dx, dy, dw, dh);
-        Notices.Post($"已替换 {n} 格");
-    }
-
     private static TileDataBlock FromHeld()
     {
-        var item = Main.LocalPlayer.HeldItem;
-        var stamp = new TileDataBlock();
+        TryHandStamp(out var stamp, warn: false);
+        return stamp;
+    }
+
+    private static Item Held() => !Main.mouseItem.IsAir ? Main.mouseItem : Main.LocalPlayer.HeldItem;
+
+    private static bool TryHandStamp(out TileDataBlock stamp, bool warn = true)
+    {
+        stamp = default;
+        var item = Held();
+        if (item.createTile < 0 && item.createWall <= 0 && item.paint == 0)
+        {
+            if (warn)
+                Notices.Post("请先拿着要填充或替换的物块 / 墙壁 / 油漆");
+            return false;
+        }
+
         if (item.createTile >= 0)
         {
             stamp.HasTile = true;
@@ -397,6 +443,11 @@ public static class EditorSession
 
         if (item.createWall > 0)
             stamp.WallType = (ushort)item.createWall;
-        return stamp;
+        if (item.paint > 0)
+        {
+            stamp.Color = item.paint;
+            stamp.WallColor = item.paint;
+        }
+        return true;
     }
 }

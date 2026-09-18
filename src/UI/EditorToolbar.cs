@@ -20,10 +20,8 @@ public sealed class EditorToolbar
     [
         (EditorTool.Marquee, Icons.Crop, "选区", true),
         (EditorTool.Brush, Icons.Brush, "笔刷", true),
-        (EditorTool.Fill, Icons.Colors, "油漆桶", false),
         (EditorTool.Eraser, Icons.Eraser, "橡皮擦", true),
         (EditorTool.Eyedropper, Icons.Pencil, "吸管", false),
-        (EditorTool.Replace, Icons.Reload, "替换\n左键替换，右键取样匹配源", false),
         (EditorTool.Shape, Icons.Section, "形状", true),
     ];
 
@@ -114,7 +112,7 @@ public sealed class EditorToolbar
 
         if (hover)
             ImGui.SetTooltip(tool == EditorTool.Shape
-                ? $"形状 · {Ui.DrawNames[(int)EditorSession.DrawKind]}\n右键选择直线 / 矩形 / 圆形"
+                ? $"形状 · {Ui.DrawNames[(int)EditorSession.DrawKind]}\n右键选择形状\nShift 拖出正圆或正方"
                 : shapes ? $"{tip}\n右键选择形态" : tip);
         if (!shapes || !ImGui.BeginPopupContextItem($"##shape{i}"))
             return;
@@ -125,6 +123,11 @@ public sealed class EditorToolbar
             {
                 if (ImGui.Selectable(Ui.DrawNames[s], (int)EditorSession.DrawKind == s))
                     EditorSession.DrawKind = (DrawKind)s;
+            }
+            if (EditorSession.DrawKind == DrawKind.RoundRect)
+            {
+                ImGui.SetNextItemWidth(140f);
+                ImGui.SliderInt("圆角", ref EditorSession.ShapeRadius, 1, 32);
             }
         }
         else
@@ -149,6 +152,9 @@ public sealed class EditorToolbar
                 break;
             case DrawKind.Circle:
                 dl.AddCircle(c, 8f, color, 20, 1.6f);
+                break;
+            case DrawKind.RoundRect:
+                dl.AddRect(c - new Vector2(7f, 7f), c + new Vector2(7f, 7f), color, 4f, ImDrawFlags.None, 1.6f);
                 break;
             default:
                 dl.AddRect(c - new Vector2(7f, 7f), c + new Vector2(7f, 7f), color, 0f, ImDrawFlags.None, 1.6f);

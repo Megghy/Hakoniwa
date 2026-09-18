@@ -1,7 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.Globalization;
-using System.Numerics;
 using Hakoniwa.Core;
 using Hexa.NET.ImGui;
 using Microsoft.Xna.Framework;
@@ -254,18 +251,11 @@ public sealed class ItemEditorWindow
             _cwCommandText = Data.ToCwCommand();
         }
 
-        // 发射弹幕 ID
         int proj = Data.ShootProjectileId.GetValueOrDefault(0);
-        ImGui.SetNextItemWidth(halfW - 90f);
-        if (ImGui.InputInt("发射弹幕 ID", ref proj))
+        if (IdPicker.Draw("发射弹幕", ref proj, IdPicker.Kind.Projectile))
         {
             Data.ShootProjectileId = (short)Math.Max(0, proj);
             _cwCommandText = Data.ToCwCommand();
-        }
-        if (proj > 0)
-        {
-            string projName = proj < Lang.GetProjectileName(proj).Value.Length ? Lang.GetProjectileName(proj).Value : $"弹幕 #{proj}";
-            ImGui.TextDisabled($"弹幕: {projName}");
         }
 
         // 弹幕射速
@@ -329,19 +319,15 @@ public sealed class ItemEditorWindow
             _cwCommandText = Data.ToCwCommand();
         }
 
-        // 自身弹药类别 ID
         int ammo = Data.AmmoIdentifier.GetValueOrDefault(0);
-        ImGui.SetNextItemWidth(halfW - 90f);
-        if (ImGui.InputInt("弹药类别 ID (ammo)", ref ammo))
+        if (IdPicker.Draw("弹药类别", ref ammo, IdPicker.Kind.Ammo))
         {
             Data.AmmoIdentifier = ammo > 0 ? (short)ammo : null;
             _cwCommandText = Data.ToCwCommand();
         }
 
-        // 消耗弹药类别 ID
         int useAmmo = Data.UseAmmoIdentifier.GetValueOrDefault(0);
-        ImGui.SetNextItemWidth(halfW - 90f);
-        if (ImGui.InputInt("消耗弹药 ID (useammo)", ref useAmmo))
+        if (IdPicker.Draw("消耗弹药", ref useAmmo, IdPicker.Kind.Ammo))
         {
             Data.UseAmmoIdentifier = useAmmo > 0 ? (short)useAmmo : null;
             _cwCommandText = Data.ToCwCommand();
@@ -412,7 +398,7 @@ public sealed class ItemEditorWindow
         float btnH = 28f;
 
         // 1. 复制 /cw 命令
-        if (ImGui.Button("📋 复制 /cw 命令", new Vector2(btnW, btnH)))
+        if (ImGui.Button("复制 /cw 命令", new Vector2(btnW, btnH)))
         {
             string cmd = Data.ToCwCommand();
             ImGui.SetClipboardText(cmd);
@@ -425,7 +411,7 @@ public sealed class ItemEditorWindow
         ImGui.SameLine(0f, 4f);
 
         // 2. 粘贴并导入
-        if (ImGui.Button("📥 粘贴并导入", new Vector2(btnW, btnH)))
+        if (ImGui.Button("粘贴并导入", new Vector2(btnW, btnH)))
         {
             string clip = Ui.GetClipboardText();
             if (CustomWeaponData.TryParseCwCommand(clip, out var parsed, out var err))
@@ -444,7 +430,7 @@ public sealed class ItemEditorWindow
         ImGui.SameLine(0f, 4f);
 
         // 3. 放入背包
-        if (ImGui.Button("📦 放入背包", new Vector2(btnW, btnH)))
+        if (ImGui.Button("放入背包", new Vector2(btnW, btnH)))
         {
             Data.GiveToLocalPlayer(fullStack: true);
             SoundEngine.PlaySound(SoundID.Grab);
@@ -453,7 +439,7 @@ public sealed class ItemEditorWindow
         ImGui.SameLine(0f, 4f);
 
         // 4. 应用到手持物品
-        if (ImGui.Button("✋ 应用到手持", new Vector2(btnW, btnH)))
+        if (ImGui.Button("应用到手持", new Vector2(btnW, btnH)))
         {
             if (Main.LocalPlayer.active && !Main.LocalPlayer.HeldItem.IsAir)
             {
@@ -476,7 +462,7 @@ public sealed class ItemEditorWindow
         ImGui.SameLine(0f, 4f);
 
         // 5. 还原默认
-        if (ImGui.Button("🔄 还原原版", new Vector2(btnW, btnH)))
+        if (ImGui.Button("还原原版", new Vector2(btnW, btnH)))
         {
             Data.LoadFromDefault(Data.ItemNetId);
             SyncFromData();

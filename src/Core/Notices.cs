@@ -7,7 +7,9 @@ public enum NotifyCorner
     左上,
     右上,
     左下,
-    右下
+    右下,
+    上中,
+    下中,
 }
 
 public static class Notices

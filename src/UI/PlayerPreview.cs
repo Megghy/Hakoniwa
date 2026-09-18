@@ -14,10 +14,23 @@ internal static class PlayerPreview
 
     private static RenderTarget2D? _rt;
     private static Player? _dummy;
+    private static Player? _queued;
+    private static bool _wanted;
+
+    public static void Prepare()
+    {
+        if (!_wanted)
+            return;
+        _wanted = false;
+        if (_queued is not { active: true })
+            return;
+        Render(_queued);
+    }
 
     public static void Draw(Player src, Num.Vector2 size)
     {
-        Render(src);
+        _queued = src;
+        _wanted = true;
         if (_rt is null || _rt.IsDisposed)
             return;
         var id = ImGuiBackend.GetTextureId(_rt);
@@ -40,7 +53,8 @@ internal static class PlayerPreview
         _dummy.PlayerFrame();
         _dummy.bodyFrame.Y = _dummy.legFrame.Y = _dummy.headFrame.Y = 0;
 
-        var old = device.GetRenderTargets();
+        var oldRt = device.GetRenderTargets();
+        var oldVp = device.Viewport;
         device.SetRenderTarget(_rt);
         device.Clear(new Color(16, 18, 28, 255));
         Main.spriteBatch.Begin(SpriteSortMode.Immediate, BlendState.AlphaBlend, SamplerState.PointClamp,
@@ -56,10 +70,11 @@ internal static class PlayerPreview
         finally
         {
             Main.spriteBatch.End();
-            if (old.Length == 0)
+            if (oldRt.Length == 0)
                 device.SetRenderTarget(null);
             else
-                device.SetRenderTargets(old);
+                device.SetRenderTargets(oldRt);
+            device.Viewport = oldVp;
         }
     }
 
@@ -68,7 +83,7 @@ internal static class PlayerPreview
         if (_rt is { IsDisposed: false } && _rt.GraphicsDevice == device)
             return;
         _rt?.Dispose();
-        _rt = new RenderTarget2D(device, Width, Height, false, SurfaceFormat.Color, DepthFormat.None);
+        _rt = new RenderTarget2D(device, Width, Height, false, SurfaceFormat.Color, DepthFormat.None, 0, RenderTargetUsage.PreserveContents);
     }
 
     private static void CopyLook(Player src, Player dst)

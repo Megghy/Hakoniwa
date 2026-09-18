@@ -15,21 +15,22 @@ internal static class SchematicDrawer
     public static void DrawWorld()
     {
         var schem = EditorSession.Clipboard;
-        if (!EditorSession.Pasting || schem is null || Main.gameMenu || Main.mapFullscreen || !FocusHelper.AllowInputProcessing)
+        if (!EditorSession.Pasting || schem is null || !EditorSession.Selection.Active || Main.gameMenu || Main.mapFullscreen || !FocusHelper.AllowInputProcessing)
             return;
 
-        EditorSession.CursorTile(out int ox, out int oy);
+        int ox = EditorSession.Selection.MinX;
+        int oy = EditorSession.Selection.MinY;
         EditorSession.VisibleTiles(out int vx, out int vy, out int vw, out int vh);
         var list = Ui.WorldList;
         var layers = EditorSession.Layers;
         for (int iy = 0; iy < schem.Height; iy++)
         {
-            int wy = oy + iy - schem.AnchorY;
+            int wy = oy + iy;
             if (wy < vy || wy >= vy + vh)
                 continue;
             for (int ix = 0; ix < schem.Width; ix++)
             {
-                int wx = ox + ix - schem.AnchorX;
+                int wx = ox + ix;
                 if (wx < vx || wx >= vx + vw)
                     continue;
                 WorldTile(wx, wy, out var min, out var max);

@@ -59,6 +59,7 @@ public static class HakoniwaUi
         CheatHooks.PostUpdate += Tick;
         Notices.Posted += NotifyHost.Enqueue;
         Main.OnEngineLoad += Init;
+        Main.OnPreDraw += _ => PlayerPreview.Prepare();
         Main.OnPostDraw += _ => Render();
     }
 
@@ -295,6 +296,13 @@ public static class HakoniwaUi
             used = Math.Max(used, cx);
         }
 
+        if (InventoryPacks.Count > 0)
+        {
+            WrapPack(ref cx, ref cy, PackPlusW, maxW);
+            cx += PackPlusW + PackChipGap;
+            used = Math.Max(used, cx);
+        }
+
         WrapPack(ref cx, ref cy, PackPlusW, maxW);
         width = Math.Max(used, cx + PackPlusW);
         height = cy + PackChipH;
@@ -368,6 +376,26 @@ public static class HakoniwaUi
             cx += w + PackChipGap;
         }
 
+        if (InventoryPacks.Count > 0)
+        {
+            WrapPack(ref cx, ref cy, PackPlusW, maxW);
+            var saveMin = wp + new System.Numerics.Vector2(cx, cy);
+            var saveSz = new System.Numerics.Vector2(PackPlusW, PackChipH);
+            Ui.Invisible("##packSave", saveMin, saveSz);
+            bool saveHover = ImGui.IsItemHovered();
+            if (ImGui.IsItemClicked())
+            {
+                InventoryPacks.SaveActive(Main.LocalPlayer);
+                SoundEngine.PlaySound(Terraria.ID.SoundID.MenuTick);
+            }
+
+            Ui.DrawPixelSlot(dl, saveMin, saveMin + saveSz, saveHover, false);
+            Icons.DrawDirect(dl, saveMin + saveSz * 0.5f, Icons.Archive, 255, saveHover ? 0xFFFFFFFF : 0xFFB4C2D6, 16f);
+            if (saveHover)
+                ImGui.SetTooltip("保存当前背包");
+            cx += PackPlusW + PackChipGap;
+        }
+
         WrapPack(ref cx, ref cy, PackPlusW, maxW);
         var plusMin = wp + new System.Numerics.Vector2(cx, cy);
         var plusSz = new System.Numerics.Vector2(PackPlusW, PackChipH);
@@ -383,7 +411,7 @@ public static class HakoniwaUi
         var plusSize = ImGui.CalcTextSize("+");
         dl.AddText(plusMin + (plusSz - plusSize) * 0.5f, plusHover ? 0xFFFFFFFF : 0xFFB4C2D6, "+");
         if (plusHover)
-            ImGui.SetTooltip("新建背包（保存当前物品）");
+            ImGui.SetTooltip("新建空背包（当前背包会先保存）");
     }
 
     private static void Init()
@@ -494,31 +522,35 @@ public static class HakoniwaUi
         bool ctrl = kb.IsKeyDown(Keys.LeftControl) || kb.IsKeyDown(Keys.RightControl);
 
         // Ctrl + 滚轮动态调节笔刷大小
-        if (ctrl && scrollDelta != 0 && (EditorSession.Tool is EditorTool.Brush or EditorTool.Eraser || EditorSession.Tool == EditorTool.Shape && EditorSession.DrawKind == DrawKind.Line || StudioIsOpen))
+        if (ctrl && scrollDelta != 0)
         {
             int step = scrollDelta > 0 ? 1 : -1;
-            int nextRadius = Math.Max(0, Math.Min(50, EditorSession.BrushRadius + step));
-            if (nextRadius != EditorSession.BrushRadius)
+            if (EditorSession.Tool == EditorTool.Shape && EditorSession.DrawKind == DrawKind.RoundRect)
             {
-                EditorSession.BrushRadius = nextRadius;
-                SelectionOverlay.TriggerBrushHud();
+                int next = Math.Max(1, Math.Min(32, EditorSession.ShapeRadius + step));
+                if (next != EditorSession.ShapeRadius)
+                {
+                    EditorSession.ShapeRadius = next;
+                    SelectionOverlay.TriggerBrushHud();
+                }
+            }
+            else if (EditorSession.Tool is EditorTool.Brush or EditorTool.Eraser || EditorSession.Tool == EditorTool.Shape && EditorSession.DrawKind == DrawKind.Line || StudioIsOpen)
+            {
+                int nextRadius = Math.Max(0, Math.Min(50, EditorSession.BrushRadius + step));
+                if (nextRadius != EditorSession.BrushRadius)
+                {
+                    EditorSession.BrushRadius = nextRadius;
+                    SelectionOverlay.TriggerBrushHud();
+                }
             }
         }
 
         bool left = mouseState.LeftButton == ButtonState.Pressed;
         bool right = mouseState.RightButton == ButtonState.Pressed;
         bool overGameUi = Main.myPlayer >= 0 && Main.player[Main.myPlayer].lastMouseInterface;
-        if (EditorSession.Pasting && !Ui.Mouse && !overGameUi)
-        {
-            if (left && !_leftWasDown)
-                EditorSession.CommitPaste();
-            else if (right && !_toolRightWasDown)
-                EditorSession.CancelPaste();
-        }
-
         bool blocked = false;
         if (Visible)
-            blocked = SelectionOverlay.Update(!Ui.Mouse && !EditorSession.Pasting && !overGameUi);
+            blocked = SelectionOverlay.Update(!Ui.Mouse && !overGameUi);
         else
             SelectionOverlay.ReleaseCursor();
         var tool = EditorSession.Tool;
@@ -532,8 +564,6 @@ public static class HakoniwaUi
                 else if (left && EditorSession.Stroking)
                     EditorSession.DragStroke(tx, ty);
             }
-            else if (right && !_toolRightWasDown && tool == EditorTool.Replace)
-                EditorSession.PickMatch(tx, ty);
             else if (left && tool is EditorTool.Brush or EditorTool.Eraser)
             {
                 if (!_leftWasDown)

@@ -200,6 +200,8 @@ public sealed class StudioWindow
             int draw = (int)EditorSession.DrawKind;
             Ui.Chips("draw-chips", Ui.DrawNames.Length, ref draw, i => Ui.DrawNames[i], 24f);
             EditorSession.DrawKind = (DrawKind)draw;
+            if (EditorSession.DrawKind == DrawKind.RoundRect)
+                ImGui.SliderInt("圆角半径", ref EditorSession.ShapeRadius, 1, 32);
             ImGui.Spacing();
         }
 
@@ -216,9 +218,7 @@ public sealed class StudioWindow
         ImGui.TextDisabled(EditorSession.HasStamp
             ? $"图章 物块 {stamp.TileType} 墙 {stamp.WallType} 帧 {stamp.TileFrameX},{stamp.TileFrameY}"
             : "图章来自手持物品（吸管可锁定世界格子）");
-        if (EditorSession.HasMatch)
-            ImGui.TextDisabled($"替换源 物块 {EditorSession.Match.TileType} 墙 {EditorSession.Match.WallType}");
-        ImGui.TextDisabled("Ctrl+滚轮调半径。替换：右键取样源，左键替换选区或可见范围。");
+        ImGui.TextDisabled("Ctrl+滚轮调半径。形状：Shift 拖出正圆或正方。选区内：填充整区 / 替换同类。");
 
         ImGui.EndChild();
 

@@ -115,6 +115,17 @@ public static class ItemCatalog
         }
     }
 
+    public static bool GiveToCursor(int type)
+    {
+        if (Main.gameMenu || !Main.LocalPlayer.active)
+            return false;
+
+        Main.mouseItem.SetDefaults(type);
+        Main.mouseItem.stack = Math.Max(1, Main.mouseItem.maxStack);
+        Notices.Post($"已拿到 {Lang.GetItemNameValue(type)} x{Main.mouseItem.stack}");
+        return true;
+    }
+
     public static bool Give(int type, bool fullStack)
     {
         if (Main.gameMenu || !Main.LocalPlayer.active)

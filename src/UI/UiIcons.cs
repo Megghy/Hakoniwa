@@ -78,9 +78,46 @@ public static class UiIcons
     public static void DrawItemDirect(ImDrawListPtr drawList, Num.Vector2 center, int itemId, float targetSize = 22f, byte alpha = 255)
     {
         var texId = GetItemTexture(itemId, out var uv0, out var uv1, out var origSize);
+        DrawFitted(drawList, center, texId, uv0, uv1, origSize, targetSize, alpha);
+    }
+
+    public static void DrawProjectileDirect(ImDrawListPtr drawList, Num.Vector2 center, int projId, float targetSize = 22f, byte alpha = 255)
+    {
+        var texId = GetProjectileTexture(projId, out var uv0, out var uv1, out var origSize);
+        DrawFitted(drawList, center, texId, uv0, uv1, origSize, targetSize, alpha);
+    }
+
+    public static IntPtr GetProjectileTexture(int projId, out Num.Vector2 uv0, out Num.Vector2 uv1, out Num.Vector2 size)
+    {
+        uv0 = Num.Vector2.Zero;
+        uv1 = Num.Vector2.One;
+        size = Num.Vector2.Zero;
+        if (projId <= 0 || projId >= ProjectileID.Count)
+            return IntPtr.Zero;
+
+        var asset = TextureAssets.Projectile[projId];
+        if (asset is null)
+            return IntPtr.Zero;
+        if (asset.State != AssetState.Loaded)
+            Main.Assets.Request<Texture2D>(asset.Name, AssetRequestMode.ImmediateLoad);
+        if (asset.State != AssetState.Loaded)
+            return IntPtr.Zero;
+
+        var tex = asset.Value;
+        if (tex is not { IsDisposed: false } || tex.Width <= 0 || tex.Height <= 0)
+            return IntPtr.Zero;
+
+        int frames = projId < Main.projFrames.Length ? Math.Max(1, Main.projFrames[projId]) : 1;
+        int frameH = Math.Max(1, tex.Height / frames);
+        uv1 = new Num.Vector2(1f, frameH / (float)tex.Height);
+        size = new Num.Vector2(tex.Width, frameH);
+        return ImGuiBackend.GetTextureId(tex);
+    }
+
+    private static void DrawFitted(ImDrawListPtr drawList, Num.Vector2 center, IntPtr texId, Num.Vector2 uv0, Num.Vector2 uv1, Num.Vector2 origSize, float targetSize, byte alpha)
+    {
         if (texId == IntPtr.Zero || origSize.X <= 0f || origSize.Y <= 0f)
             return;
-
         float scale = targetSize / Math.Max(origSize.X, origSize.Y);
         var drawSize = origSize * scale;
         var halfSize = drawSize * 0.5f;

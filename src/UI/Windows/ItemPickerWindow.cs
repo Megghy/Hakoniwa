@@ -336,56 +336,31 @@ public sealed class ItemPickerWindow
 
         var io = ImGui.GetIO();
         bool shift = io.KeyShift;
-
-        // 上下文右键菜单
-        if (ImGui.BeginPopupContextItem($"##ctx_{id}"))
-        {
-            if (ImGui.Selectable("⚡ 高级属性编辑 (Custom Weapon)"))
-            {
-                HakoniwaUi.ItemEditor.OpenWith((short)id);
-            }
-            if (ImGui.Selectable("📋 复制为 /cwadd 命令"))
-            {
-                var data = new CustomWeaponData((short)id);
-                ImGui.SetClipboardText(data.ToCwCommand());
-                Notices.Post("已复制 /cwadd 命令到剪贴板");
-            }
-            ImGui.Separator();
-            if (ImGui.Selectable("📦 拿取整组"))
-            {
-                ItemCatalog.Give(id, true);
-            }
-            if (ImGui.Selectable("📦 拿取 1 个"))
-            {
-                ItemCatalog.Give(id, false);
-            }
-            ImGui.Separator();
-            if (ImGui.Selectable(fav ? "💔 取消收藏" : "⭐ 加入收藏"))
-            {
-                CheatState.ToggleFavorite(id);
-            }
-            ImGui.EndPopup();
-        }
-
         if (ImGui.IsItemClicked(ImGuiMouseButton.Middle) || (ImGui.IsItemClicked(ImGuiMouseButton.Left) && overHeart))
         {
             CheatState.ToggleFavorite(id);
             SoundEngine.PlaySound(SoundID.MenuTick);
         }
-        else if (shift && ImGui.IsItemClicked(ImGuiMouseButton.Left))
+        else if (ImGui.IsItemClicked(ImGuiMouseButton.Right))
         {
-            HakoniwaUi.ItemEditor.OpenWith((short)id);
-        }
-        else if (shift && ImGui.IsItemClicked(ImGuiMouseButton.Right))
-        {
-            var data = new CustomWeaponData((short)id);
-            ImGui.SetClipboardText(data.ToCwCommand());
-            Notices.Post("已复制 /cwadd 命令到剪贴板");
-            SoundEngine.PlaySound(SoundID.MenuTick);
+            if (shift)
+            {
+                ImGui.SetClipboardText(new CustomWeaponData((short)id).ToCwCommand());
+                Notices.Post("已复制 /cwadd 命令到剪贴板");
+                SoundEngine.PlaySound(SoundID.MenuTick);
+            }
+            else
+                HakoniwaUi.ItemEditor.OpenWith((short)id);
         }
         else if (ImGui.IsItemClicked(ImGuiMouseButton.Left))
         {
-            ItemCatalog.Give(id, true);
+            if (shift)
+                HakoniwaUi.ItemEditor.OpenWith((short)id);
+            else
+            {
+                ItemCatalog.GiveToCursor(id);
+                SoundEngine.PlaySound(SoundID.Grab);
+            }
         }
 
         ImGui.PopID();

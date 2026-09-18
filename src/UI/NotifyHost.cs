@@ -60,10 +60,12 @@ public static class NotifyHost
         float width = 252f * scale;
         const float pad = 14f;
         var display = ImGui.GetIO().DisplaySize;
+        bool center = CheatState.NotifyAnchor is NotifyCorner.上中 or NotifyCorner.下中;
         bool right = CheatState.NotifyAnchor is NotifyCorner.右上 or NotifyCorner.右下;
-        bool bottom = CheatState.NotifyAnchor is NotifyCorner.左下 or NotifyCorner.右下;
-        float x = right ? display.X - width - pad : pad;
+        bool bottom = CheatState.NotifyAnchor is NotifyCorner.左下 or NotifyCorner.右下 or NotifyCorner.下中;
+        float x = center ? display.X * 0.5f : (right ? display.X - width - pad : pad);
         float y = bottom ? display.Y - pad : pad;
+        var pivot = new Num.Vector2(center ? 0.5f : 0f, bottom ? 1f : 0f);
 
         ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 4f);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 1f);
@@ -79,7 +81,7 @@ public static class NotifyHost
             float age = now - toast.Born;
             float alpha = age > Life - Fade ? (Life - age) / Fade : 1f;
             ImGui.PushStyleVar(ImGuiStyleVar.Alpha, alpha);
-            ImGui.SetNextWindowPos(new Num.Vector2(x, y), ImGuiCond.Always, new Num.Vector2(0f, bottom ? 1f : 0f));
+            ImGui.SetNextWindowPos(new Num.Vector2(x, y), ImGuiCond.Always, pivot);
             ImGui.SetNextWindowSizeConstraints(new Num.Vector2(width, 0f), new Num.Vector2(width, 240f * scale));
             if (ImGui.Begin($"##HakoniwaToast{i}", flags))
             {

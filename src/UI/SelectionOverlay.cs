@@ -16,27 +16,32 @@ public static class SelectionOverlay
 {
     private const float Handle = 4f;
     private const float Icon = 22f;
-    private const float Gap = 1f;
-    private const float EdgePad = 4f;
+    private const float Gap = 4f;
+    private const float EdgePad = 6f;
 
     private enum Part { None, Inside, N, S, E, W, NE, NW, SE, SW }
     private enum Drag { None, Create, Move, Resize, MoveTiles }
-    private enum Edge { Top, Right, Bottom, Left }
-    private enum Act { Copy, Cut, Paste, Save, FlipH, FlipV, Rotate, CopyMove, CutMove, Delete, Cancel }
+    private enum Edge { Top, Right, Bottom, Left, TopRight, Bar }
+    private enum Act { Copy, Cut, Paste, Save, FlipH, FlipV, Rotate, Fill, Replace, CopyMove, CutMove, Delete, Cancel, SkipAir, Confirm, CancelPaste }
 
     private static readonly (Act Id, Edge Edge, string Icon, string Tip)[] Actions =
     [
-        (Act.Copy, Edge.Top, Icons.Copy, "复制"),
-        (Act.Cut, Edge.Top, Icons.Cut, "剪切"),
-        (Act.Paste, Edge.Top, Icons.Clipboard, "粘贴"),
-        (Act.Save, Edge.Top, Icons.Archive, "存为蓝图"),
+        (Act.Copy, Edge.Left, Icons.Copy, "复制"),
+        (Act.Cut, Edge.Left, Icons.Cut, "剪切"),
+        (Act.Paste, Edge.Left, Icons.Clipboard, "粘贴"),
+        (Act.Save, Edge.Left, Icons.Archive, "存为蓝图"),
+        (Act.Delete, Edge.Left, Icons.Trash, "删除"),
         (Act.FlipH, Edge.Right, Icons.FlipH, "水平翻转"),
         (Act.FlipV, Edge.Right, Icons.FlipV, "垂直翻转"),
         (Act.Rotate, Edge.Right, Icons.Reload, "旋转 90°"),
-        (Act.CopyMove, Edge.Bottom, Icons.SectionCopy, "复制并移动"),
-        (Act.CutMove, Edge.Bottom, Icons.Move, "剪切并移动"),
-        (Act.Delete, Edge.Left, Icons.Trash, "删除"),
-        (Act.Cancel, Edge.Left, Icons.Close, "取消选区"),
+        (Act.Fill, Edge.Bottom, Icons.Colors, "填充选区\n用手持物块填满"),
+        (Act.Replace, Edge.Bottom, Icons.Reload, "替换模式\n点击选区内物块，用持有物块替换同类"),
+        (Act.SkipAir, Edge.Left, Icons.Earth, "跳过空气\n开启后空气格保留地图原有内容"),
+        (Act.CopyMove, Edge.TopRight, Icons.SectionCopy, "复制并移动"),
+        (Act.CutMove, Edge.TopRight, Icons.Move, "剪切并移动"),
+        (Act.Cancel, Edge.TopRight, Icons.Close, "取消选区"),
+        (Act.Confirm, Edge.Bar, "", "确认写入地图"),
+        (Act.CancelPaste, Edge.Bar, "", "取消粘贴"),
     ];
 
     private static Drag _drag;
@@ -44,6 +49,7 @@ public static class SelectionOverlay
     private static int _anchorX, _anchorY, _srcX, _srcY;
     private static int _minX, _minY, _maxX, _maxY;
     private static bool _left;
+    private static bool _right;
     private static double _lastClick;
     private static Num.Vector2 _lastClickPos;
     private static readonly Num.Vector2[] BtnMin = new Num.Vector2[Actions.Length];
@@ -76,10 +82,17 @@ public static class SelectionOverlay
 
     public static bool Update(bool allowPress = true)
     {
+        if (!EditorSession.Selection.Active)
+        {
+            EditorSession.ReplaceMode = false;
+            if (EditorSession.Pasting)
+                EditorSession.CancelPaste();
+        }
         if (Main.gameMenu || Main.mapFullscreen || !FocusHelper.AllowInputProcessing)
         {
             _drag = Drag.None;
             _left = true;
+            _right = true;
             ReleaseCursor();
             return false;
         }
@@ -93,6 +106,7 @@ public static class SelectionOverlay
         if (CheatState.WaitingSelectKey)
         {
             _left = left;
+            _right = Mouse.GetState().RightButton == ButtonState.Pressed;
             ReleaseCursor();
             return false;
         }
@@ -107,7 +121,17 @@ public static class SelectionOverlay
         if (allowPress && left && !_left)
             OnPress(sp, tx, ty, mod);
 
+        bool right = Mouse.GetState().RightButton == ButtonState.Pressed;
+        if (allowPress && right && !_right && HitButton(sp) < 0 && (EditorSession.Selection.Active || EditorSession.Pasting))
+        {
+            EditorSession.CancelPaste();
+            EditorSession.ReplaceMode = false;
+            EditorSession.Selection.Clear();
+            _drag = Drag.None;
+        }
+
         _left = left;
+        _right = right;
         OverrideCursor = _drag is Drag.Move or Drag.Resize or Drag.MoveTiles
             || allowPress && EditorSession.Selection.Active && (HitPart(sp) != Part.None || HitButton(sp) >= 0);
         CheatHooks.HideVanillaCursor = OverrideCursor;
@@ -129,7 +153,8 @@ public static class SelectionOverlay
             uint fill = ImGui.ColorConvertFloat4ToU32(new Num.Vector4(0.33f, 0.55f, 0.95f, 0.18f));
             uint line = ImGui.ColorConvertFloat4ToU32(new Num.Vector4(0.55f, 0.75f, 1f, 0.95f));
             DrawShape(list, min, max, fill, line, sel.Shape);
-            DrawHandles(list, min, max, line);
+            if (!EditorSession.Pasting)
+                DrawHandles(list, min, max, line);
             DrawButtons(min, max);
             int cells = ToolEngine.CountRectShape(sel.MinX, sel.MinY, sel.MaxX, sel.MaxY, sel.Shape);
             EditorOverlay.DrawEdgeChip(min, max, $"{sel.Width} × {sel.Height}  ·  {cells} 格");
@@ -154,6 +179,17 @@ public static class SelectionOverlay
         if (HitButton(sp) >= 0)
             return;
 
+        if (EditorSession.Pasting)
+        {
+            if (HitPart(sp) == Part.Inside)
+            {
+                _anchorX = tx;
+                _anchorY = ty;
+                _drag = Drag.Move;
+            }
+            return;
+        }
+
         var part = HitPart(sp);
         if (part is >= Part.N and <= Part.SW)
         {
@@ -168,6 +204,11 @@ public static class SelectionOverlay
 
         if (part == Part.Inside)
         {
+            if (EditorSession.ReplaceMode)
+            {
+                EditorSession.ReplaceSelectionAt(tx, ty);
+                return;
+            }
             _anchorX = tx;
             _anchorY = ty;
             _drag = Drag.Move;
@@ -242,8 +283,12 @@ public static class SelectionOverlay
             case Act.FlipH: EditorSession.FlipHorizontal(); break;
             case Act.FlipV: EditorSession.FlipVertical(); break;
             case Act.Rotate: EditorSession.Rotate90(); break;
+            case Act.Fill: EditorSession.FillSelection(); break;
+            case Act.Confirm: EditorSession.CommitPaste(); break;
+            case Act.CancelPaste: EditorSession.CancelPaste(); break;
             case Act.Delete: EditorSession.Delete(); break;
             case Act.Cancel:
+                EditorSession.ReplaceMode = false;
                 EditorSession.Selection.Clear();
                 break;
         }
@@ -299,51 +344,99 @@ public static class SelectionOverlay
     private static void DrawButtons(Num.Vector2 min, Num.Vector2 max)
     {
         var display = ImGui.GetIO().DisplaySize;
-        PlaceEdge(Edge.Top, min, max, display, false);
-        PlaceEdge(Edge.Bottom, min, max, display, false);
-        PlaceEdge(Edge.Left, min, max, display, true);
-        PlaceEdge(Edge.Right, min, max, display, true);
+        PlaceEdge(Edge.Top, min, max, display);
+        PlaceEdge(Edge.Bottom, min, max, display);
+        PlaceEdge(Edge.Left, min, max, display);
+        PlaceEdge(Edge.Right, min, max, display);
+        PlaceEdge(Edge.TopRight, min, max, display);
+        PlaceEdge(Edge.Bar, min, max, display);
         _tip = null;
         for (int i = 0; i < Actions.Length; i++)
-            DrawButton(i);
+        {
+            if (Shown(Actions[i].Id))
+                DrawButton(i);
+        }
     }
+
+    private static bool Shown(Act id) => EditorSession.Pasting
+        ? id is Act.FlipH or Act.FlipV or Act.Rotate or Act.SkipAir or Act.Confirm or Act.CancelPaste
+        : id is not (Act.SkipAir or Act.Confirm or Act.CancelPaste);
 
     private static void DrawButton(int i)
     {
-        var size = new Num.Vector2(Icon, Icon);
+        var id = Actions[i].Id;
+        bool big = id is Act.Confirm or Act.CancelPaste;
+        var size = big ? BtnMax[i] - BtnMin[i] : new Num.Vector2(Icon, Icon);
         if (!Ui.BeginChrome($"##selAct{i}", BtnMin[i], size))
             return;
-
-        bool move = Actions[i].Id is Act.CopyMove or Act.CutMove;
-        bool on = _drag == Drag.MoveTiles && (Actions[i].Id == (_cutMove ? Act.CutMove : Act.CopyMove));
+        bool move = id is Act.CopyMove or Act.CutMove;
+        bool on = id == Act.Replace && EditorSession.ReplaceMode
+            || id == Act.SkipAir && EditorSession.PasteSkipAir
+            || _drag == Drag.MoveTiles && (id == (_cutMove ? Act.CutMove : Act.CopyMove));
         Ui.Invisible("##a", BtnMin[i], size);
         bool hover = ImGui.IsItemHovered();
-        if (move && ImGui.IsItemActive() && _drag != Drag.MoveTiles)
-            BeginHoldMove((int)(Main.MouseWorld.X / 16f), (int)(Main.MouseWorld.Y / 16f), Actions[i].Id == Act.CutMove);
-        else if (!move && ImGui.IsItemClicked())
+        if (id == Act.Replace && ImGui.IsItemClicked())
+            EditorSession.ReplaceMode = !EditorSession.ReplaceMode;
+        else if (id == Act.SkipAir && ImGui.IsItemClicked())
+            EditorSession.PasteSkipAir = !EditorSession.PasteSkipAir;
+        else if (move && !EditorSession.ReplaceMode && ImGui.IsItemActive() && _drag != Drag.MoveTiles)
+            BeginHoldMove((int)(Main.MouseWorld.X / 16f), (int)(Main.MouseWorld.Y / 16f), id == Act.CutMove);
+        else if (!move && id is not (Act.Replace or Act.SkipAir) && ImGui.IsItemClicked())
             Invoke(i);
         if (hover)
             _tip = Actions[i].Tip;
 
         var dl = ImGui.GetWindowDrawList();
-        dl.AddRectFilled(BtnMin[i], BtnMax[i], hover || on ? Ui.ChipHover : Ui.ChipIdle, 11f);
-        dl.AddRect(BtnMin[i], BtnMax[i], hover || on ? Ui.ChipOn : Ui.ChipLine, 11f);
-        Icons.DrawDirect(dl, (BtnMin[i] + BtnMax[i]) * 0.5f, Actions[i].Icon);
+        float round = big ? 6f : 11f;
+        dl.AddRectFilled(BtnMin[i], BtnMax[i], hover || on ? Ui.ChipHover : Ui.ChipIdle, round);
+        dl.AddRect(BtnMin[i], BtnMax[i], hover || on || id == Act.Confirm ? Ui.ChipOn : Ui.ChipLine, round);
+        if (big)
+        {
+            string label = id == Act.Confirm ? "确认" : "取消";
+            var ts = ImGui.CalcTextSize(label);
+            dl.AddText((BtnMin[i] + BtnMax[i] - ts) * 0.5f, 0xFFF1F5F9, label);
+        }
+        else
+            Icons.DrawDirect(dl, (BtnMin[i] + BtnMax[i]) * 0.5f, Actions[i].Icon);
         Ui.EndChrome();
     }
 
-    private static void PlaceEdge(Edge edge, Num.Vector2 min, Num.Vector2 max, Num.Vector2 display, bool vertical)
+    private static void PlaceEdge(Edge edge, Num.Vector2 min, Num.Vector2 max, Num.Vector2 display)
     {
         int count = 0;
         for (int i = 0; i < Actions.Length; i++)
         {
-            if (Actions[i].Edge == edge)
+            if (Actions[i].Edge == edge && Shown(Actions[i].Id))
                 count++;
         }
+        if (count == 0)
+            return;
 
-        float span = count * Icon + (count - 1) * Gap;
+        const float barW = 80f;
+        const float barH = 28f;
+        const float barGap = 8f;
+        float cell = edge == Edge.Bar ? barW : Icon;
+        float gap = edge == Edge.Bar ? barGap : Gap;
+        float span = count * cell + (count - 1) * gap;
+        bool vertical = edge is Edge.Left or Edge.Right;
         float x, y;
-        if (vertical)
+        if (edge == Edge.Bar)
+        {
+            x = Math.Max(4f, Math.Min((min.X + max.X - span) * 0.5f, display.X - span - 4f));
+            y = max.Y + EdgePad + 4f;
+            if (y + barH > display.Y - 4f)
+                y = min.Y - barH - EdgePad;
+            y = Math.Max(4f, Math.Min(y, display.Y - barH - 4f));
+        }
+        else if (edge == Edge.TopRight)
+        {
+            x = max.X - span;
+            y = min.Y - Icon - EdgePad;
+            if (y < 4f) y = max.Y + EdgePad;
+            if (y + Icon > display.Y - 4f) y = min.Y + 4f;
+            x = Math.Max(4f, Math.Min(x, display.X - span - 4f));
+        }
+        else if (vertical)
         {
             y = Math.Max(4f, Math.Min((min.Y + max.Y - span) * 0.5f, display.Y - span - 4f));
             x = edge == Edge.Left ? min.X - Icon - EdgePad : max.X + EdgePad;
@@ -360,12 +453,12 @@ public static class SelectionOverlay
 
         for (int i = 0; i < Actions.Length; i++)
         {
-            if (Actions[i].Edge != edge)
+            if (Actions[i].Edge != edge || !Shown(Actions[i].Id))
                 continue;
             BtnMin[i] = new Num.Vector2(x, y);
-            BtnMax[i] = BtnMin[i] + new Num.Vector2(Icon, Icon);
-            if (vertical) y += Icon + Gap;
-            else x += Icon + Gap;
+            BtnMax[i] = BtnMin[i] + new Num.Vector2(cell, edge == Edge.Bar ? barH : Icon);
+            if (vertical) y += cell + gap;
+            else x += cell + gap;
         }
     }
 
@@ -377,7 +470,10 @@ public static class SelectionOverlay
             case Part.E or Part.W: ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEw); break;
             case Part.NE or Part.SW: ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeNesw); break;
             case Part.NW or Part.SE: ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeNwse); break;
-            case Part.Inside: ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeAll); break;
+            case Part.Inside:
+                if (!EditorSession.ReplaceMode)
+                    ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeAll);
+                break;
         }
     }
 
@@ -387,6 +483,8 @@ public static class SelectionOverlay
             return -1;
         for (int i = 0; i < Actions.Length; i++)
         {
+            if (!Shown(Actions[i].Id))
+                continue;
             if (sp.X >= BtnMin[i].X && sp.X <= BtnMax[i].X && sp.Y >= BtnMin[i].Y && sp.Y <= BtnMax[i].Y)
                 return i;
         }
@@ -403,6 +501,9 @@ public static class SelectionOverlay
         bool nearS = Math.Abs(sp.Y - max.Y) <= m && sp.X >= min.X - m && sp.X <= max.X + m;
         bool nearW = Math.Abs(sp.X - min.X) <= m && sp.Y >= min.Y - m && sp.Y <= max.Y + m;
         bool nearE = Math.Abs(sp.X - max.X) <= m && sp.Y >= min.Y - m && sp.Y <= max.Y + m;
+        bool inside = sp.X >= min.X && sp.X <= max.X && sp.Y >= min.Y && sp.Y <= max.Y;
+        if (EditorSession.Pasting)
+            return inside ? Part.Inside : Part.None;
         if (nearN && nearW) return Part.NW;
         if (nearN && nearE) return Part.NE;
         if (nearS && nearW) return Part.SW;
@@ -411,7 +512,7 @@ public static class SelectionOverlay
         if (nearS) return Part.S;
         if (nearW) return Part.W;
         if (nearE) return Part.E;
-        if (sp.X >= min.X && sp.X <= max.X && sp.Y >= min.Y && sp.Y <= max.Y)
+        if (inside)
             return Part.Inside;
         return Part.None;
     }

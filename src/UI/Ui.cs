@@ -22,10 +22,10 @@ public static class Ui
     public const uint SlotInner = 0xFF141A28;
     public const uint GoldBorder = 0xFFF8BD38;
 
-    public static readonly string[] ToolNames = ["选区", "笔刷", "油漆桶", "橡皮擦", "吸管", "替换", "形状"];
+    public static readonly string[] ToolNames = ["选区", "笔刷", "橡皮擦", "吸管", "形状"];
     public static readonly string[] LayerNames = ["物块", "墙壁", "涂漆", "电线", "液体"];
     public static readonly string[] ShapeNames = ["圆形", "方形", "菱形"];
-    public static readonly string[] DrawNames = ["直线", "矩形", "圆形"];
+    public static readonly string[] DrawNames = ["直线", "矩形", "圆形", "圆角矩形"];
 
     public const ImGuiWindowFlags Overlay =
         ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar |

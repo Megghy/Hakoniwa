@@ -11,6 +11,7 @@ using Terraria.GameInput;
 using Hakoniwa.Engine;
 using Terraria.GameContent.UI.Chat;
 using Terraria.Graphics.Light;
+using Terraria.IO;
 
 namespace Hakoniwa.Core;
 
@@ -32,7 +33,6 @@ public static class CheatHooks
     private static readonly Stopwatch LogicClock = Stopwatch.StartNew();
     private static long _nextLogicTick;
     private static bool _prepHooked;
-    private static bool _fpsApplied;
     private static int _cappedHz;
     private static int _refreshHz;
     private static long _refreshHzAt;
@@ -54,10 +54,12 @@ public static class CheatHooks
         hooks.RegisterDetour(Req(typeof(WorldGen), nameof(WorldGen.PlaceTile), typeof(int), typeof(int), typeof(int), typeof(bool), typeof(bool), typeof(int), typeof(int)), PlaceTile);
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.Update), typeof(GameTime)), Update);
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.SetTitle), typeof(bool)), SetTitle);
+        hooks.RegisterDetour(Req(typeof(Main), nameof(Main.UpdateDisplaySettings)), UpdateDisplaySettings);
         hooks.RegisterDetour(Req(typeof(PlayerInput), nameof(PlayerInput.UpdateInput)), UpdateInput);
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.HandleIME)), HandleIME);
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.ClearHoverItem)), ClearHoverItem);
         hooks.RegisterDetour(Req(typeof(Main), "DrawInterface_36_Cursor"), DrawInterfaceCursor);
+        hooks.RegisterDetour(Req(typeof(Player), nameof(Player.SavePlayer), typeof(PlayerFileData), typeof(bool), typeof(bool)), SavePlayer);
         hooks.RegisterDetour(Req(typeof(Lighting), nameof(Lighting.LightTiles), typeof(Rectangle)), LightTiles);
         hooks.RegisterDetour(Req(typeof(RemadeChatMonitor), nameof(RemadeChatMonitor.DrawChat), typeof(bool)), DrawVanillaChat);
     }
@@ -72,6 +74,18 @@ public static class CheatHooks
     {
         if (!HideVanillaChat)
             orig(self, drawing);
+    }
+
+    private static void SavePlayer(Action<PlayerFileData, bool, bool> orig, PlayerFileData playerFile, bool skipMapSave, bool canBeSkipped)
+    {
+        var player = playerFile.Player;
+        if (player is null || player.whoAmI != Main.myPlayer)
+        {
+            orig(playerFile, skipMapSave, canBeSkipped);
+            return;
+        }
+
+        CharacterPacks.WriteThrough(player, () => orig(playerFile, skipMapSave, canBeSkipped));
     }
 
     private static MethodInfo Req(Type type, string name, params Type[] args)
@@ -211,40 +225,55 @@ public static class CheatHooks
         return orig(i, j, type, mute, forced, plr, style);
     }
 
+    private static void UpdateDisplaySettings(Action<Main> orig, Main self)
+    {
+        // 原版发现 VSync 关着就会 ApplyChanges，XNA 会释放全部世界 RT 且不重建。
+        if (CheatState.UnlockFps)
+            Main.graphics.SynchronizeWithVerticalRetrace = true;
+        orig(self);
+    }
+
     private static void Update(Action<Main, GameTime> orig, Main self, GameTime time)
     {
+        ApplyFpsUnlock();
         if (!CheatState.UnlockFps)
         {
             RunLogic(orig, self, time);
-            if (_fpsApplied)
-                CapTo(self, 60);
+            if (_cappedHz != 0)
+            {
+                self.TargetElapsedTime = TimeSpan.FromTicks(TimeSpan.TicksPerSecond / 60);
+                self.IsFixedTimeStep = true;
+                _cappedHz = 0;
+            }
             return;
         }
 
-        CapTo(self, RefreshHz());
         long now = LogicClock.ElapsedTicks;
         long step = Stopwatch.Frequency / 60;
         if (_nextLogicTick == 0)
             _nextLogicTick = now;
-        if (now < _nextLogicTick)
-            return;
-
-        int runs = 0;
-        while (now >= _nextLogicTick && runs < 3)
+        if (now >= _nextLogicTick)
         {
-            _nextLogicTick += step;
-            RunLogic(orig, self, time);
-            runs++;
+            int runs = 0;
+            while (now >= _nextLogicTick && runs < 3)
+            {
+                _nextLogicTick += step;
+                RunLogic(orig, self, time);
+                runs++;
+            }
+            if (runs == 3)
+                _nextLogicTick = now + step;
         }
 
-        if (runs == 3)
-            _nextLogicTick = now + step;
+        // 原版 DoUpdate 会把 IsFixedTimeStep 改回 false，必须在 Update 结束时写回去，下一拍 Tick 才能按刷新率限帧。
+        ApplyUnlockTiming(self);
     }
 
     private static void RunLogic(Action<Main, GameTime> orig, Main self, GameTime time)
     {
         PreUpdate?.Invoke();
         orig(self, time);
+        CharacterPacks.Tick();
         ApplyLighting();
         ApplyTime();
         CheatState.SaveIfDirty();
@@ -253,30 +282,34 @@ public static class CheatHooks
 
     public static void ApplyFpsUnlock()
     {
-        if (_prepHooked || Main.graphics is null)
+        if (Main.graphics is null)
             return;
-        _prepHooked = true;
-        Main.graphics.PreparingDeviceSettings += (_, e) =>
+        if (!_prepHooked)
         {
-            if (CheatState.UnlockFps)
-                e.GraphicsDeviceInformation.PresentationParameters.PresentationInterval = PresentInterval.Immediate;
-        };
-        if (_fpsApplied || !CheatState.UnlockFps)
-            return;
+            _prepHooked = true;
+            Main.graphics.PreparingDeviceSettings += (_, e) =>
+            {
+                e.GraphicsDeviceInformation.PresentationParameters.PresentationInterval =
+                    CheatState.UnlockFps ? PresentInterval.Immediate : PresentInterval.One;
+            };
+        }
+
         var device = Main.instance.GraphicsDevice;
         if (device is null || device.IsDisposed)
             return;
-        _fpsApplied = true;
-        if (device.PresentationParameters.PresentationInterval == PresentInterval.Immediate)
+        var want = CheatState.UnlockFps ? PresentInterval.Immediate : PresentInterval.One;
+        if (device.PresentationParameters.PresentationInterval == want)
             return;
+
+        // 管理器属性必须保持 true：原版 UpdateDisplaySettings 见 false 会 ApplyChanges，XNA 释放世界 RT。
+        Main.graphics.SynchronizeWithVerticalRetrace = true;
         Main.graphics.ApplyChanges();
         Main.instance.InitTargets();
     }
 
-    private static void CapTo(Main self, int hz)
+    private static void ApplyUnlockTiming(Main self)
     {
-        if (_cappedHz == hz && self.IsFixedTimeStep)
-            return;
+        int hz = RefreshHz();
         _cappedHz = hz;
         self.IsFixedTimeStep = true;
         self.TargetElapsedTime = TimeSpan.FromTicks(TimeSpan.TicksPerSecond / hz);
