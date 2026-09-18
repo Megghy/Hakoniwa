@@ -110,7 +110,7 @@ public sealed class WorldTiles : ITileGrid
         if (Main.netMode == 0)
             return;
 
-        const int chunk = 32;
+        int chunk = Main.netMode == 1 ? 4 : 32;
         for (int cx = x1; cx < x2; cx += chunk)
         {
             int cw = Math.Min(chunk, x2 - cx);

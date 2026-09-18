@@ -1,7 +1,6 @@
 using System;
 using Hakoniwa.Core;
 using Hakoniwa.Engine;
-using Hakoniwa.Engine.Data;
 using Hakoniwa.Engine.Tools;
 using Hexa.NET.ImGui;
 using Microsoft.Xna.Framework;
@@ -20,7 +19,6 @@ internal static class EditorOverlay
     {
         if (Main.gameMenu || Main.mapFullscreen || !FocusHelper.AllowInputProcessing)
             return;
-        DrawGhost();
         DrawReplacePreview();
         DrawStrokePreview();
         DrawBrushPreview();
@@ -90,34 +88,6 @@ internal static class EditorOverlay
                 WorldTileRect(tx, ty, tx + 1, ty + 1, out var min, out var max);
                 list.AddRectFilled(min, max, 0x5538BDF8u);
                 list.AddRect(min, max, 0xFFF8BD38u);
-            }
-        }
-    }
-
-    private static void DrawGhost()
-    {
-        var clip = EditorSession.Clipboard;
-        if (clip is null)
-            return;
-        EditorSession.Origin(out int ox, out int oy);
-        EditorSession.VisibleTiles(out int vx, out int vy, out int vw, out int vh);
-        var list = Ui.WorldList;
-        for (int iy = 0; iy < clip.Height; iy++)
-        {
-            int wy = oy + iy - clip.AnchorY;
-            if (wy < vy || wy >= vy + vh)
-                continue;
-            for (int ix = 0; ix < clip.Width; ix++)
-            {
-                var tile = clip[ix, iy];
-                if (tile.Skip || !tile.HasTile && tile.WallType == 0)
-                    continue;
-                int wx = ox + ix - clip.AnchorX;
-                if (wx < vx || wx >= vx + vw)
-                    continue;
-                WorldTileRect(wx, wy, wx + 1, wy + 1, out var min, out var max);
-                uint color = tile.HasTile ? GhostColor(tile.TileType) : 0x33294A63u;
-                list.AddRectFilled(min, max, color);
             }
         }
     }
@@ -272,15 +242,6 @@ internal static class EditorOverlay
                     list.AddLine(new Num.Vector2(max.X, min.Y), max, line, 2f);
             }
         }
-    }
-
-    private static uint GhostColor(ushort type)
-    {
-        uint h = (uint)(type * 0x9E3779B9);
-        byte r = (byte)(80 + (h & 0x7F));
-        byte g = (byte)(80 + ((h >> 8) & 0x7F));
-        byte b = (byte)(80 + ((h >> 16) & 0x7F));
-        return 0x66000000u | r | ((uint)g << 8) | ((uint)b << 16);
     }
 
     private static void WorldTileRect(int x0, int y0, int x1, int y1, out Num.Vector2 min, out Num.Vector2 max)

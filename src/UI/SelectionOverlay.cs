@@ -22,13 +22,14 @@ public static class SelectionOverlay
     private enum Part { None, Inside, N, S, E, W, NE, NW, SE, SW }
     private enum Drag { None, Create, Move, Resize, MoveTiles }
     private enum Edge { Top, Right, Bottom, Left }
-    private enum Act { Copy, Cut, Paste, FlipH, FlipV, Rotate, CopyMove, CutMove, Delete, Cancel }
+    private enum Act { Copy, Cut, Paste, Save, FlipH, FlipV, Rotate, CopyMove, CutMove, Delete, Cancel }
 
     private static readonly (Act Id, Edge Edge, string Icon, string Tip)[] Actions =
     [
         (Act.Copy, Edge.Top, Icons.Copy, "复制"),
         (Act.Cut, Edge.Top, Icons.Cut, "剪切"),
         (Act.Paste, Edge.Top, Icons.Clipboard, "粘贴"),
+        (Act.Save, Edge.Top, Icons.Archive, "存为蓝图"),
         (Act.FlipH, Edge.Right, Icons.FlipH, "水平翻转"),
         (Act.FlipV, Edge.Right, Icons.FlipV, "垂直翻转"),
         (Act.Rotate, Edge.Right, Icons.Reload, "旋转 90°"),
@@ -57,7 +58,7 @@ public static class SelectionOverlay
     {
         if (Main.gameMenu || Main.mapFullscreen || CheatState.WaitingSelectKey || !FocusHelper.AllowInputProcessing)
             return false;
-        if (CheatState.SelectHeld(Keyboard.GetState()) || _drag != Drag.None)
+        if (EditorSession.Pasting || CheatState.SelectHeld(Keyboard.GetState()) || _drag != Drag.None)
             return true;
         if (!EditorSession.Selection.Active)
             return false;
@@ -223,7 +224,8 @@ public static class SelectionOverlay
         {
             case Act.Copy: EditorSession.Copy(); break;
             case Act.Cut: EditorSession.Cut(); break;
-            case Act.Paste: EditorSession.Paste(); break;
+            case Act.Paste: EditorSession.BeginPaste(); break;
+            case Act.Save: HakoniwaUi.SaveSelectionAsSchematic(); break;
             case Act.FlipH: EditorSession.FlipHorizontal(); break;
             case Act.FlipV: EditorSession.FlipVertical(); break;
             case Act.Rotate: EditorSession.Rotate90(); break;

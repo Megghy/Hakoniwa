@@ -2,6 +2,7 @@ using System;
 using Hakoniwa.Core;
 using Hakoniwa.Engine.Data;
 using Hakoniwa.Engine.Tools;
+using Microsoft.Xna.Framework.Input;
 using Terraria;
 
 namespace Hakoniwa.Engine;
@@ -29,6 +30,7 @@ public static class EditorSession
     public static readonly Selection Selection = new();
     public static readonly HistoryStack History = new();
     public static Schematic? Clipboard;
+    public static bool Pasting;
     public static EditorTool Tool;
 
     public static void SetTool(EditorTool tool)
@@ -52,7 +54,33 @@ public static class EditorSession
     public static bool Stroking;
     public static int StrokeX0, StrokeY0, StrokeX1, StrokeY1;
 
+    private static KeyboardState _keys;
+
     public static TileDataBlock CurrentStamp() => HasStamp ? Stamp : FromHeld();
+
+    public static void SyncKeys(KeyboardState kb) => _keys = kb;
+
+    public static void HandleKeys(KeyboardState kb, bool hotkeys)
+    {
+        if (Pressed(kb, Keys.Escape) && Pasting && !Main.playerInventory && !Main.ingameOptionsWindow)
+        {
+            CancelPaste();
+            Main.blockKey = Keys.Escape.ToString();
+        }
+
+        if (hotkeys && (kb.IsKeyDown(Keys.LeftControl) || kb.IsKeyDown(Keys.RightControl)))
+        {
+            if (Pressed(kb, Keys.C)) Copy();
+            if (Pressed(kb, Keys.X)) Cut();
+            if (Pressed(kb, Keys.V)) BeginPaste();
+            if (Pressed(kb, Keys.Z)) Undo();
+            if (Pressed(kb, Keys.Y)) Redo();
+        }
+
+        _keys = kb;
+    }
+
+    private static bool Pressed(KeyboardState kb, Keys key) => kb.IsKeyDown(key) && !_keys.IsKeyDown(key);
 
     public static void Delete()
     {
@@ -81,14 +109,26 @@ public static class EditorSession
         Notices.Post($"已剪切 {Selection.Width}x{Selection.Height}");
     }
 
-    public static void Paste()
+    public static void BeginPaste()
     {
         if (Clipboard is null || !Main.LocalPlayer.active)
             return;
-        Origin(out int x, out int y);
+        if (!Pasting)
+            Notices.Post("左键放置，右键或 Esc 取消");
+        Pasting = true;
+    }
+
+    public static void CancelPaste() => Pasting = false;
+
+    public static void CommitPaste()
+    {
+        if (!Pasting || Clipboard is null || !Main.LocalPlayer.active)
+            return;
+        CursorTile(out int x, out int y);
         ToolEngine.Paste(WorldTiles.Instance, Clipboard, x, y, Layers, History);
         SchematicWorld.Paste(Clipboard, x, y);
-        WorldTiles.Refresh(x, y, Clipboard.Width, Clipboard.Height);
+        WorldTiles.Refresh(x - Clipboard.AnchorX, y - Clipboard.AnchorY, Clipboard.Width, Clipboard.Height);
+        Pasting = false;
         Notices.Post($"已粘贴 {Clipboard.Width}x{Clipboard.Height}");
     }
 
@@ -144,17 +184,17 @@ public static class EditorSession
         Notices.Post("已重做");
     }
 
-    public static bool TryCopy()
+    public static Schematic? CaptureSelection()
     {
         if (!Selection.Active)
-            return false;
+            return null;
         var world = WorldTiles.Instance;
         int x1 = Math.Max(0, Selection.MinX);
         int y1 = Math.Max(0, Selection.MinY);
         int x2 = Math.Min(world.Width - 1, Selection.MaxX);
         int y2 = Math.Min(world.Height - 1, Selection.MaxY);
         if (x1 > x2 || y1 > y2)
-            return false;
+            return null;
         var schem = ToolEngine.Extract(world, x1, y1, x2 - x1 + 1, y2 - y1 + 1);
         if (Selection.Shape != BrushShape.Square)
         {
@@ -169,6 +209,14 @@ public static class EditorSession
         }
 
         SchematicWorld.Capture(schem, x1, y1);
+        return schem;
+    }
+
+    public static bool TryCopy()
+    {
+        var schem = CaptureSelection();
+        if (schem is null)
+            return false;
         Clipboard = schem;
         return true;
     }

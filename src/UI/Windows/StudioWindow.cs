@@ -1,10 +1,7 @@
 using System;
-using System.Collections.Generic;
 using System.Numerics;
 using Hakoniwa.Core;
 using Hakoniwa.Engine;
-using Hakoniwa.Engine.Data;
-using Hakoniwa.Engine.IO;
 using Hakoniwa.Engine.Tools;
 using Hexa.NET.ImGui;
 using Microsoft.Xna.Framework;
@@ -12,8 +9,6 @@ using Terraria;
 using Terraria.Audio;
 using Terraria.ID;
 using Vector2 = System.Numerics.Vector2;
-using Vector3 = System.Numerics.Vector3;
-using Vector4 = System.Numerics.Vector4;
 
 namespace Hakoniwa.UI.Windows;
 
@@ -23,14 +18,12 @@ public sealed class StudioWindow
     public bool IsOpen { get; set; }
 
     private int _currentTab;
+    private readonly SchematicLibrary _schems = new();
     private static readonly string[] Tabs = ["建造选区", "世界规则", "物品库", "角色装备", "蓝图方案", "设置"];
     private static readonly string[] TabIcons = [Icons.Crop, Icons.Earth, Icons.Box, Icons.Human, Icons.Script, Icons.Settings];
 
-    // 蓝图库状态
-    public List<Schematic> SchemLibrary { get; } = [];
-    public string SchemSearch = string.Empty;
-    public int SelectedSchemIndex = -1;
-    public string SchemPathInput = string.Empty;
+    public void LoadLibrary() => _schems.Refresh();
+    public void SaveFromSelection() => _schems.SaveFromSelection();
 
     public void Draw()
     {
@@ -59,10 +52,10 @@ public sealed class StudioWindow
                     HakoniwaUi.ItemPicker.DrawContent(embedded: true);
                     break;
                 case 3:
-                    DrawCharacterTab();
+                    CharacterTab.Draw();
                     break;
                 case 4:
-                    DrawSchematicsTab();
+                    _schems.Draw();
                     break;
                 case 5:
                     DrawSettingsTab();
@@ -167,7 +160,7 @@ public sealed class StudioWindow
         ImGui.SameLine(0f, 4f);
         if (ImGui.Button("剪切 (Ctrl+X)", new Vector2(btnW, btnH))) EditorSession.Cut();
         ImGui.SameLine(0f, 4f);
-        if (ImGui.Button("粘贴 (Ctrl+V)", new Vector2(btnW, btnH))) EditorSession.Paste();
+        if (ImGui.Button("粘贴 (Ctrl+V)", new Vector2(btnW, btnH))) EditorSession.BeginPaste();
         ImGui.SameLine(0f, 4f);
         if (ImGui.Button("删除选区 (Del)", new Vector2(btnW, btnH))) EditorSession.Delete();
 
@@ -251,213 +244,6 @@ public sealed class StudioWindow
         EditorSession.Layers = layers;
     }
 
-
-    private static void DrawCharacterTab()
-    {
-        Ui.BeginScroll("char-scroll");
-
-        if (Main.gameMenu || !Main.LocalPlayer.active)
-        {
-            Ui.Heading(Icons.Human, "角色装备");
-            ImGui.TextUnformatted("请先进入世界以编辑角色属性与手持武器。");
-            ImGui.EndChild();
-            return;
-        }
-
-        var player = Main.LocalPlayer;
-
-        // 1. 玩家基础属性
-        Ui.Heading(Icons.Human, "玩家基础属性 (Player Stats)");
-        ImGui.BeginChild("stats-card", new Vector2(0, 90f), ImGuiChildFlags.Borders);
-        var dl = ImGui.GetWindowDrawList();
-        Ui.DrawPixelPanel(dl, ImGui.GetWindowPos(), ImGui.GetWindowPos() + ImGui.GetWindowSize());
-
-        int life = player.statLifeMax;
-        if (ImGui.SliderInt("生命上限", ref life, 1, 5000))
-        {
-            player.statLifeMax = life;
-            player.statLife = life;
-        }
-
-        int mana = player.statManaMax;
-        if (ImGui.SliderInt("魔力上限", ref mana, 0, 400))
-        {
-            player.statManaMax = mana;
-            player.statMana = mana;
-        }
-
-        int hair = player.hair;
-        if (ImGui.SliderInt("发型款式", ref hair, 0, Main.maxHairStyles - 1))
-            player.hair = hair;
-
-        ImGui.EndChild();
-
-        ImGui.Spacing();
-
-        // 2. 手持装备属性修改器
-        Ui.Heading(Icons.Pencil, "当前手持/抓取物品属性修改 (Held Item Editor)");
-        ImGui.BeginChild("held-item-card", new Vector2(0, 160f), ImGuiChildFlags.Borders);
-        Ui.DrawPixelPanel(dl, ImGui.GetWindowPos(), ImGui.GetWindowPos() + ImGui.GetWindowSize());
-
-        var held = !Main.mouseItem.IsAir ? Main.mouseItem : player.HeldItem;
-        if (held.IsAir)
-        {
-            ImGui.TextDisabled("当前手持或鼠标光标未抓取任何物品 (请在背包中拾取或选中一件物品)。");
-        }
-        else
-        {
-            // 物品图标与名称
-            UiIcons.DrawItemDirect(dl, ImGui.GetCursorScreenPos() + new Vector2(16f, 16f), held.type, 28f);
-            ImGui.Dummy(new Vector2(36f, 32f));
-            ImGui.SameLine();
-            ImGui.TextColored(Ui.Gold, $"{held.Name} (ID: {held.type})");
-
-            float halfW = (ImGui.GetContentRegionAvail().X - 8f) * 0.5f;
-
-            // 左列
-            ImGui.BeginGroup();
-            int damage = held.damage;
-            ImGui.SetNextItemWidth(halfW - 80f);
-            if (ImGui.InputInt("基础伤害", ref damage)) held.damage = damage;
-
-            int useTime = held.useTime;
-            ImGui.SetNextItemWidth(halfW - 80f);
-            if (ImGui.InputInt("使用间隔", ref useTime)) held.useTime = useTime;
-
-            float shoot = held.shootSpeed;
-            ImGui.SetNextItemWidth(halfW - 80f);
-            if (ImGui.InputFloat("弹幕射速", ref shoot)) held.shootSpeed = shoot;
-            ImGui.EndGroup();
-
-            ImGui.SameLine(0f, 8f);
-
-            // 右列
-            ImGui.BeginGroup();
-            int crit = held.crit;
-            ImGui.SetNextItemWidth(halfW - 80f);
-            if (ImGui.InputInt("暴击加成", ref crit)) held.crit = crit;
-
-            int useAnim = held.useAnimation;
-            ImGui.SetNextItemWidth(halfW - 80f);
-            if (ImGui.InputInt("动画帧长", ref useAnim)) held.useAnimation = useAnim;
-
-            ImGui.Checkbox("自动连发 (Auto Reuse)", ref held.autoReuse);
-            ImGui.EndGroup();
-        }
-
-        ImGui.EndChild();
-
-        ImGui.Spacing();
-
-        // 3. 外观配色 (双列紧凑排版)
-        Ui.Heading(Icons.Colors, "外观配色 (Colors)");
-        ImGui.BeginChild("colors-card", new Vector2(0, 110f), ImGuiChildFlags.Borders);
-        Ui.DrawPixelPanel(dl, ImGui.GetWindowPos(), ImGui.GetWindowPos() + ImGui.GetWindowSize());
-
-        float colW = (ImGui.GetContentRegionAvail().X - 12f) / 3f;
-
-        ImGui.BeginGroup();
-        ColorEdit("发色", ref player.hairColor, colW);
-        ColorEdit("肤色", ref player.skinColor, colW);
-        ImGui.EndGroup();
-
-        ImGui.SameLine(0f, 6f);
-
-        ImGui.BeginGroup();
-        ColorEdit("眼睛", ref player.eyeColor, colW);
-        ColorEdit("上衣", ref player.shirtColor, colW);
-        ColorEdit("内衬", ref player.underShirtColor, colW);
-        ImGui.EndGroup();
-
-        ImGui.SameLine(0f, 6f);
-
-        ImGui.BeginGroup();
-        ColorEdit("长裤", ref player.pantsColor, colW);
-        ColorEdit("鞋子", ref player.shoeColor, colW);
-        ImGui.EndGroup();
-
-        ImGui.EndChild();
-
-        ImGui.EndChild();
-    }
-
-    private static void ColorEdit(string label, ref Microsoft.Xna.Framework.Color color, float width)
-    {
-        var rgb = new Vector3(color.R / 255f, color.G / 255f, color.B / 255f);
-        ImGui.SetNextItemWidth(width - 50f);
-        if (ImGui.ColorEdit3(label, ref rgb, ImGuiColorEditFlags.NoInputs))
-            color = new Microsoft.Xna.Framework.Color(rgb.X, rgb.Y, rgb.Z);
-    }
-
-    private void DrawSchematicsTab()
-    {
-        Ui.BeginScroll("schem-scroll");
-
-        Ui.Heading(Icons.Script, "蓝图文件导入与导出 (Schematics IO)");
-        ImGui.InputText("蓝图路径", ref SchemPathInput, (UIntPtr)512);
-
-        float btnW = 140f;
-        if (ImGui.Button("导入文件 (Import)", new Vector2(btnW, 26f)) && SchemPathInput.Length > 0)
-        {
-            try
-            {
-                SchemLibrary.Add(SchematicSerializer.Load(SchemPathInput));
-                SelectedSchemIndex = SchemLibrary.Count - 1;
-                Notices.Post("蓝图已成功导入");
-            }
-            catch (Exception ex)
-            {
-                Notices.Post($"导入失败: {ex.Message}");
-            }
-        }
-
-        ImGui.SameLine(0f, 6f);
-        if (ImGui.Button("导出当前蓝图 (Export)", new Vector2(btnW, 26f)) && SchemPathInput.Length > 0 && SelectedSchemIndex >= 0)
-        {
-            try
-            {
-                SchematicSerializer.Save(SchemLibrary[SelectedSchemIndex], SchemPathInput);
-                Notices.Post("蓝图已成功导出");
-            }
-            catch (Exception ex)
-            {
-                Notices.Post($"导出失败: {ex.Message}");
-            }
-        }
-
-        ImGui.Spacing();
-        ImGui.Separator();
-        ImGui.Spacing();
-
-        Ui.Heading(Icons.SectionCopy, "蓝图库列表 (Library)");
-        ImGui.InputTextWithHint("##schemFilter", "过滤蓝图...", ref SchemSearch, (UIntPtr)128);
-
-        ImGui.BeginChild("schem-list-child", new Vector2(0, 160f), ImGuiChildFlags.Borders);
-        var dl = ImGui.GetWindowDrawList();
-        Ui.DrawPixelPanel(dl, ImGui.GetWindowPos(), ImGui.GetWindowPos() + ImGui.GetWindowSize());
-
-        if (SchemLibrary.Count == 0)
-        {
-            ImGui.TextDisabled("暂无加载的蓝图。可在选区中复制后保存为蓝图，或从文件导入。");
-        }
-        else
-        {
-            for (int i = 0; i < SchemLibrary.Count; i++)
-            {
-                var schematic = SchemLibrary[i];
-                if (SchemSearch.Length > 0 && schematic.Name.IndexOf(SchemSearch, StringComparison.OrdinalIgnoreCase) < 0)
-                    continue;
-
-                if (ImGui.Selectable($"{schematic.Name} ({schematic.Width} x {schematic.Height})", SelectedSchemIndex == i))
-                    SelectedSchemIndex = i;
-            }
-        }
-
-        ImGui.EndChild();
-
-        ImGui.EndChild();
-    }
-
     private static void DrawSettingsTab()
     {
         Ui.BeginScroll("settings-scroll");
@@ -518,5 +304,4 @@ public sealed class StudioWindow
 
         ImGui.EndChild();
     }
-
 }

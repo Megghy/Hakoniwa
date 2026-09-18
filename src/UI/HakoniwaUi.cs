@@ -46,9 +46,10 @@ public static class HakoniwaUi
     private static bool _toolRightWasDown;
     private static bool _enterWasDown;
     private static bool _invWasOpen;
-    private static int _hotkeys;
     private static bool _brushMerging;
     private static string _packRename = "";
+
+    public static void SaveSelectionAsSchematic() => Studio.SaveFromSelection();
 
     public static void Install()
     {
@@ -90,7 +91,7 @@ public static class HakoniwaUi
         Ui.Sync(
             extraMouse: SignEditor.IsOpen,
             extraKeyboard: SignEditor.IsOpen || CheatState.WaitingSelectKey || Chat.InputFocused,
-            blockGameMouse: Visible && !Main.mapFullscreen && FocusHelper.AllowInputProcessing,
+            blockGameMouse: (Visible || EditorSession.Pasting) && !Main.mapFullscreen && FocusHelper.AllowInputProcessing,
             skipImGuiKeyboard: Chat.IsOpen && !Chat.InputFocused);
     }
 
@@ -101,6 +102,7 @@ public static class HakoniwaUi
         if (kb.IsKeyDown(Keys.Escape))
         {
             CheatState.WaitingSelectKey = false;
+            EditorSession.SyncKeys(kb);
             return;
         }
 
@@ -112,6 +114,7 @@ public static class HakoniwaUi
                 continue;
             CheatState.SelectModifier = key;
             CheatState.WaitingSelectKey = false;
+            EditorSession.SyncKeys(kb);
             Notices.Post($"框选键: {key}");
             return;
         }
@@ -125,6 +128,8 @@ public static class HakoniwaUi
         if (!_backend.NewFrame())
             return;
         // Tools → Panels → Notices. World overlay uses Ui.WorldList (behind all windows).
+        if (!Main.gameMenu)
+            SchematicDrawer.DrawWorld();
         if (Visible)
         {
             FloatingBall.Draw();
@@ -371,6 +376,7 @@ public static class HakoniwaUi
     {
         CheatHooks.ApplyFpsUnlock();
         _backend = new ImGuiBackend(Main.instance.GraphicsDevice);
+        Studio.LoadLibrary();
     }
 
     private static void HandleChatToggle(KeyboardState kb)
@@ -451,20 +457,25 @@ public static class HakoniwaUi
 
     private static void HandleEditor()
     {
+        var kb = Keyboard.GetState();
         if (!FocusHelper.AllowInputProcessing || Main.mapFullscreen || Chat.IsOpen || SignEditor.IsOpen || NativeTextInput.Busy)
         {
             _leftWasDown = true;
             _toolRightWasDown = true;
+            EditorSession.SyncKeys(kb);
             EditorSession.Stroking = false;
             _lastScrollWheel = Mouse.GetState().ScrollWheelValue;
             return;
         }
 
+        if (CheatState.WaitingSelectKey)
+            EditorSession.SyncKeys(kb);
+        else
+            EditorSession.HandleKeys(kb, !Ui.Keyboard);
+
         var mouseState = Mouse.GetState();
         int scrollDelta = mouseState.ScrollWheelValue - _lastScrollWheel;
         _lastScrollWheel = mouseState.ScrollWheelValue;
-
-        var kb = Keyboard.GetState();
         bool ctrl = kb.IsKeyDown(Keys.LeftControl) || kb.IsKeyDown(Keys.RightControl);
 
         // Ctrl + 滚轮动态调节笔刷大小
@@ -481,8 +492,16 @@ public static class HakoniwaUi
 
         bool left = mouseState.LeftButton == ButtonState.Pressed;
         bool right = mouseState.RightButton == ButtonState.Pressed;
-        bool blocked = Visible && SelectionOverlay.Update(!Ui.Mouse);
-        if (Visible && !Ui.Mouse && !blocked)
+        if (EditorSession.Pasting && !Ui.Mouse)
+        {
+            if (left && !_leftWasDown)
+                EditorSession.CommitPaste();
+            else if (right && !_toolRightWasDown)
+                EditorSession.CancelPaste();
+        }
+
+        bool blocked = Visible && SelectionOverlay.Update(!Ui.Mouse && !EditorSession.Pasting);
+        if (Visible && !Ui.Mouse && !blocked && !EditorSession.Pasting)
         {
             var tool = EditorSession.Tool;
             EditorSession.CursorTile(out int tx, out int ty);
@@ -509,20 +528,6 @@ public static class HakoniwaUi
                 EditorSession.ApplyToolAtCursor();
         }
 
-        bool canHotkey = !Ui.Keyboard && ctrl;
-        int hotkeys = 0;
-        if (canHotkey && kb.IsKeyDown(Keys.C)) hotkeys |= 1;
-        if (canHotkey && kb.IsKeyDown(Keys.X)) hotkeys |= 2;
-        if (canHotkey && kb.IsKeyDown(Keys.V)) hotkeys |= 4;
-        if (canHotkey && kb.IsKeyDown(Keys.Z)) hotkeys |= 8;
-        if (canHotkey && kb.IsKeyDown(Keys.Y)) hotkeys |= 16;
-        int pressed = hotkeys & ~_hotkeys;
-        if ((pressed & 1) != 0) EditorSession.Copy();
-        if ((pressed & 2) != 0) EditorSession.Cut();
-        if ((pressed & 4) != 0) EditorSession.Paste();
-        if ((pressed & 8) != 0) EditorSession.Undo();
-        if ((pressed & 16) != 0) EditorSession.Redo();
-        _hotkeys = hotkeys;
         _leftWasDown = left;
         _toolRightWasDown = right;
         if (!left && EditorSession.Stroking)
