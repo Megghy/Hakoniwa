@@ -44,11 +44,11 @@ public static class Ui
     public static bool Mouse { get; private set; }
     public static bool Keyboard { get; private set; }
 
-    public static void Sync(bool extraMouse = false, bool extraKeyboard = false, bool blockGameMouse = false, bool skipImGuiKeyboard = false)
+    public static void Sync(bool extraMouse = false, bool extraKeyboard = false, bool blockGameMouse = false)
     {
         var io = ImGui.GetIO();
         Mouse = extraMouse || io.WantCaptureMouse;
-        Keyboard = extraKeyboard || (!skipImGuiKeyboard && io.WantCaptureKeyboard);
+        Keyboard = extraKeyboard || io.WantTextInput;
         CheatHooks.BlockGameMouse = Mouse || blockGameMouse;
         CheatHooks.BlockGameScroll = Mouse;
         CheatHooks.BlockGameKeyboard = Keyboard;

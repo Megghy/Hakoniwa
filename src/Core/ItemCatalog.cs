@@ -77,7 +77,19 @@ public static class ItemCatalog
     ];
 
     private static readonly Sub[] NoSubs = [];
-    private static ItemGroup[]? _groupByType;
+
+    private readonly struct Record(int id, string name, ItemGroup group, bool vanity, bool tile, bool wall, bool platform)
+    {
+        public int Id { get; } = id;
+        public string Name { get; } = name;
+        public ItemGroup Group { get; } = group;
+        public bool Vanity { get; } = vanity;
+        public bool Tile { get; } = tile;
+        public bool Wall { get; } = wall;
+        public bool Platform { get; } = platform;
+    }
+
+    private static Record[]? _records;
 
     public static Sub[] Subs(ItemCategory category) => category switch
     {
@@ -92,27 +104,44 @@ public static class ItemCatalog
     public static void Search(string query, ItemCategory category, int sub, ISet<int> favorites, List<int> hits)
     {
         hits.Clear();
-        var probe = new Item();
         var subs = Subs(category);
         var filter = subs.Length == 0 ? Sub.All : subs[sub];
+        foreach (var rec in Records())
+        {
+            if (category == ItemCategory.Favorites && !favorites.Contains(rec.Id))
+                continue;
+            if (query.Length > 0 && rec.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0)
+                continue;
+            if (category != ItemCategory.Favorites && !Matches(rec, category, filter))
+                continue;
+            hits.Add(rec.Id);
+        }
+    }
+
+    private static Record[] Records()
+    {
+        if (_records is not null)
+            return _records;
+        var list = new List<Record>(ItemID.Count);
+        var probe = new Item();
         for (int id = 1; id < ItemID.Count; id++)
         {
-            if (category == ItemCategory.Favorites && !favorites.Contains(id))
-                continue;
             string name = Lang.GetItemNameValue(id);
             if (name.Length == 0)
                 continue;
-            if (query.Length > 0 && name.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0)
-                continue;
-            if (category != ItemCategory.Favorites)
-            {
-                probe.SetDefaults(id);
-                if (!Matches(probe, category, filter))
-                    continue;
-            }
-
-            hits.Add(id);
+            probe.SetDefaults(id);
+            list.Add(new Record(
+                id,
+                name,
+                ContentSamples.CreativeHelper.GetItemGroup(probe, out _),
+                probe.vanity,
+                probe.createTile >= 0,
+                probe.createWall > 0,
+                probe.createTile >= 0 && TileID.Sets.Platforms[probe.createTile]));
         }
+
+        _records = list.ToArray();
+        return _records;
     }
 
     public static bool GiveToCursor(int type)
@@ -149,43 +178,27 @@ public static class ItemCatalog
         return true;
     }
 
-    public static bool Matches(Item item, ItemCategory category, Sub sub)
+    private static bool Matches(Record rec, ItemCategory category, Sub sub)
     {
-        var group = GroupOf(item);
-        if (!InCategory(item, category, group))
+        if (!InCategory(rec, category))
             return false;
-        if (sub.Groups.Length > 0 && !Contains(sub.Groups, group))
+        if (sub.Groups.Length > 0 && !Contains(sub.Groups, rec.Group))
             return false;
         if (!sub.PlatformsOnly && !sub.ExcludePlatforms)
             return true;
-        bool platform = IsPlatform(item);
-        if (sub.PlatformsOnly)
-            return platform;
-        return !platform;
+        return sub.PlatformsOnly ? rec.Platform : !rec.Platform;
     }
 
-    private static bool InCategory(Item item, ItemCategory category, ItemGroup group) => category switch
+    private static bool InCategory(Record rec, ItemCategory category) => category switch
     {
         ItemCategory.Favorites or ItemCategory.All => true,
-        ItemCategory.Tools => group is ItemGroup.Pickaxe or ItemGroup.Axe or ItemGroup.Hammer or ItemGroup.FishingRods,
-        ItemCategory.Armor => !item.vanity && group is ItemGroup.Headgear or ItemGroup.Torso or ItemGroup.Pants,
-        ItemCategory.Vanity => item.vanity && group is ItemGroup.Headgear or ItemGroup.Torso or ItemGroup.Pants or ItemGroup.Accessories,
-        ItemCategory.Dyes => group is ItemGroup.Dye or ItemGroup.HairDye,
-        ItemCategory.Blocks => item.createTile >= 0 || item.createWall > 0,
+        ItemCategory.Tools => rec.Group is ItemGroup.Pickaxe or ItemGroup.Axe or ItemGroup.Hammer or ItemGroup.FishingRods,
+        ItemCategory.Armor => !rec.Vanity && rec.Group is ItemGroup.Headgear or ItemGroup.Torso or ItemGroup.Pants,
+        ItemCategory.Vanity => rec.Vanity && rec.Group is ItemGroup.Headgear or ItemGroup.Torso or ItemGroup.Pants or ItemGroup.Accessories,
+        ItemCategory.Dyes => rec.Group is ItemGroup.Dye or ItemGroup.HairDye,
+        ItemCategory.Blocks => rec.Tile || rec.Wall,
         _ => throw new ArgumentOutOfRangeException(nameof(category), category, "Unknown item category."),
     };
-
-    private static ItemGroup GroupOf(Item item)
-    {
-        _groupByType ??= new ItemGroup[ItemID.Count];
-        ref var cached = ref _groupByType[item.type];
-        if (cached == 0)
-            cached = ContentSamples.CreativeHelper.GetItemGroup(item, out _);
-        return cached;
-    }
-
-    private static bool IsPlatform(Item item) =>
-        item.createTile >= 0 && TileID.Sets.Platforms[item.createTile];
 
     private static bool Contains(ItemGroup[] groups, ItemGroup group)
     {

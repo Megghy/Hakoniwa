@@ -36,15 +36,16 @@ public sealed class FloatingBall
     {
         _actions.Add(new("工坊", "箱庭工坊主工作台", Icons.Home, () => HakoniwaUi.StudioIsOpen, () => HakoniwaUi.StudioIsOpen = !HakoniwaUi.StudioIsOpen));
         _actions.Add(new("物品", "独立物品选择器", Icons.Box, () => HakoniwaUi.ItemPickerIsOpen, () => HakoniwaUi.ItemPickerIsOpen = !HakoniwaUi.ItemPickerIsOpen));
-        _actions.Add(new("改物", "高级物品属性编辑器", Icons.Pencil, () => HakoniwaUi.ItemEditorIsOpen, () => HakoniwaUi.ItemEditorIsOpen = !HakoniwaUi.ItemEditorIsOpen));
+        _actions.Add(new("改物", "高级物品属性编辑器", Icons.Pencil, () => HakoniwaUi.ItemEditorIsOpen, HakoniwaUi.ToggleItemEditor));
         _actions.Add(new("上帝", "上帝模式 [无敌]", Icons.Shield, () => CheatState.GodMode, () => CheatState.GodMode = !CheatState.GodMode));
         _actions.Add(new("全亮", "全图照明 [夜视]", Icons.Sun, () => CheatState.FullBright, () => CheatState.FullBright = !CheatState.FullBright));
         _actions.Add(new("穿墙", "穿墙模式 [无碰撞]", Icons.Move, () => CheatState.NoClip, () => CheatState.NoClip = !CheatState.NoClip));
-        _actions.Add(new("无限", "无限放置与触及", Icons.Infinity, () => CheatState.InfiniteReach && CheatState.InfiniteItems, () =>
+        _actions.Add(new("无限", "无限放置、触及与悬空", Icons.Infinity, () => CheatState.InfiniteReach && CheatState.InfiniteItems, () =>
         {
             bool toggle = !(CheatState.InfiniteReach && CheatState.InfiniteItems);
             CheatState.InfiniteReach = toggle;
             CheatState.InfiniteItems = toggle;
+            CheatState.FreePlacement = toggle;
         }));
         _actions.Add(new("选区", "清除当前选区", Icons.Crop, () => EditorSession.Selection.Active, () => EditorSession.Selection.Clear()));
         _actions.Add(new("撤销", "撤销上一步操作", Icons.Undo, () => false, () => EditorSession.Undo()));
@@ -60,9 +61,8 @@ public sealed class FloatingBall
 
         if (!_initialized)
         {
-            bool right = CheatState.BallRight == true;
-            float x = right ? screenSize.X - EdgeMargin : EdgeMargin;
             float y = CheatState.BallY ?? screenSize.Y * 0.35f;
+            float x = CheatState.BallX ?? (CheatState.BallRight == true ? screenSize.X - EdgeMargin : EdgeMargin);
             _pos = _targetPos = new Vector2(x, y);
             _initialized = true;
         }
@@ -132,9 +132,26 @@ public sealed class FloatingBall
         _isDragging = false;
         if (_hasDragged)
         {
-            _targetPos.X = _pos.X < screenSize.X * 0.5f ? EdgeMargin : screenSize.X - EdgeMargin;
-            _targetPos.Y = _pos.Y;
-            CheatState.BallRight = _targetPos.X > screenSize.X * 0.5f;
+            const float snap = 56f;
+            if (_pos.X <= snap)
+            {
+                _targetPos = new Vector2(EdgeMargin, _pos.Y);
+                CheatState.BallRight = false;
+                CheatState.BallX = null;
+            }
+            else if (_pos.X >= screenSize.X - snap)
+            {
+                _targetPos = new Vector2(screenSize.X - EdgeMargin, _pos.Y);
+                CheatState.BallRight = true;
+                CheatState.BallX = null;
+            }
+            else
+            {
+                _targetPos = _pos;
+                CheatState.BallRight = null;
+                CheatState.BallX = _pos.X;
+            }
+
             CheatState.BallY = _targetPos.Y;
             return;
         }

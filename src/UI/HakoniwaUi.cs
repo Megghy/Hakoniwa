@@ -30,6 +30,25 @@ public static class HakoniwaUi
         set => ItemEditor.IsOpen = value;
     }
 
+    public static void ToggleItemEditor()
+    {
+        if (ItemEditor.IsOpen)
+        {
+            ItemEditor.IsOpen = false;
+            return;
+        }
+
+        var item = !Main.mouseItem.IsAir
+            ? Main.mouseItem
+            : Main.LocalPlayer.active && !Main.LocalPlayer.HeldItem.IsAir
+                ? Main.LocalPlayer.HeldItem
+                : null;
+        if (item is not null)
+            ItemEditor.OpenWith(item);
+        else
+            ItemEditor.IsOpen = true;
+    }
+
     private static ImGuiBackend? _backend;
     private static readonly StudioWindow Studio = new();
     public static readonly ItemPickerWindow ItemPicker = new();
@@ -91,9 +110,8 @@ public static class HakoniwaUi
             return;
         Ui.Sync(
             extraMouse: SignEditor.IsOpen,
-            extraKeyboard: SignEditor.IsOpen || CheatState.WaitingSelectKey || Chat.InputFocused,
-            blockGameMouse: GameMouseBlocked(),
-            skipImGuiKeyboard: Chat.IsOpen && !Chat.InputFocused);
+            extraKeyboard: SignEditor.IsOpen || CheatState.WaitingSelectKey || Chat.InputFocused || NativeTextInput.Busy,
+            blockGameMouse: GameMouseBlocked());
     }
 
     private static bool GameMouseBlocked()
@@ -139,6 +157,7 @@ public static class HakoniwaUi
 
         if (!_backend.NewFrame())
             return;
+        UiIcons.BeginFrame();
         // Tools → Panels → Notices. World overlay uses Ui.WorldList (behind all windows).
         if (!Main.gameMenu)
             SchematicDrawer.DrawWorld();
@@ -226,7 +245,7 @@ public static class HakoniwaUi
             if (!target.IsAir)
                 ItemEditor.OpenWith(target);
             else
-                ItemEditor.IsOpen = !ItemEditor.IsOpen;
+                ToggleItemEditor();
         }
 
         uint bg2 = active2 ? 0xF81C263C : (hover2 ? 0xF8141C2A : 0xF00D111A);
@@ -481,11 +500,19 @@ public static class HakoniwaUi
         _middleWasDown = middle;
     }
 
+    internal static void PlaceLocalPlayer(Vector2 position)
+    {
+        var player = Main.LocalPlayer;
+        player.position = position;
+        player.oldPosition = position;
+        player.velocity = Vector2.Zero;
+        player.fallStart = (int)(position.Y / 16f);
+    }
+
     private static void TeleportTo(Vector2 world)
     {
         var player = Main.LocalPlayer;
-        player.velocity = Vector2.Zero;
-        player.Teleport(world - new Vector2(player.width / 2f, player.height), 1);
+        PlaceLocalPlayer(world - new Vector2(player.width / 2f, player.height));
     }
 
     private static Vector2 MapToWorld(MouseState mouse)

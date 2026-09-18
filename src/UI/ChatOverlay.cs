@@ -328,9 +328,7 @@ public sealed class ChatOverlay
 
     private static void TeleportTo(Player target)
     {
-        var player = Main.LocalPlayer;
-        player.velocity = Microsoft.Xna.Framework.Vector2.Zero;
-        player.Teleport(target.position, 1);
+        HakoniwaUi.PlaceLocalPlayer(target.position);
         Notices.Post($"已传送到 {target.name}");
     }
 

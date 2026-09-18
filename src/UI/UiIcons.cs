@@ -12,19 +12,18 @@ namespace Hakoniwa.UI;
 
 public static class UiIcons
 {
+    private const int LoadsPerFrame = 8;
+    private static int _loads;
+
+    public static void BeginFrame() => _loads = 0;
+
     public static Texture2D? GetItemTexture2D(int itemId)
     {
         if (itemId <= 0 || itemId >= ItemID.Count)
             return null;
 
         var asset = TextureAssets.Item[itemId];
-        if (asset is null)
-            return null;
-
-        if (asset.State != AssetState.Loaded)
-            Main.Assets.Request<Texture2D>(asset.Name, AssetRequestMode.ImmediateLoad);
-
-        if (asset.State != AssetState.Loaded)
+        if (asset is null || !TryLoad(asset))
             return null;
 
         var tex = asset.Value;
@@ -96,11 +95,7 @@ public static class UiIcons
             return IntPtr.Zero;
 
         var asset = TextureAssets.Projectile[projId];
-        if (asset is null)
-            return IntPtr.Zero;
-        if (asset.State != AssetState.Loaded)
-            Main.Assets.Request<Texture2D>(asset.Name, AssetRequestMode.ImmediateLoad);
-        if (asset.State != AssetState.Loaded)
+        if (asset is null || !TryLoad(asset))
             return IntPtr.Zero;
 
         var tex = asset.Value;
@@ -112,6 +107,17 @@ public static class UiIcons
         uv1 = new Num.Vector2(1f, frameH / (float)tex.Height);
         size = new Num.Vector2(tex.Width, frameH);
         return ImGuiBackend.GetTextureId(tex);
+    }
+
+    private static bool TryLoad(Asset<Texture2D> asset)
+    {
+        if (asset.State == AssetState.Loaded)
+            return true;
+        if (_loads >= LoadsPerFrame)
+            return false;
+        _loads++;
+        Main.Assets.Request<Texture2D>(asset.Name, AssetRequestMode.ImmediateLoad);
+        return asset.State == AssetState.Loaded;
     }
 
     private static void DrawFitted(ImDrawListPtr drawList, Num.Vector2 center, IntPtr texId, Num.Vector2 uv0, Num.Vector2 uv1, Num.Vector2 origSize, float targetSize, byte alpha)

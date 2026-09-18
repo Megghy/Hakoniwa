@@ -74,8 +74,7 @@ internal static class VanillaDebug
         if (pos == default)
             return;
         var player = Main.LocalPlayer;
-        player.velocity = Xna.Vector2.Zero;
-        player.Teleport(new Xna.Vector2(pos.X * 16f - player.width / 2f, pos.Y * 16f - player.height), 1);
+        HakoniwaUi.PlaceLocalPlayer(new Xna.Vector2(pos.X * 16f - player.width / 2f, pos.Y * 16f - player.height));
     }
 
     private static DebugMessage Msg(string command) => new((byte)Main.myPlayer, command);

@@ -16,7 +16,7 @@ Hakoniwa/
 │   │   └── Tools/          # ToolEngine / TransformEngine / HistoryStack
 │   ├── UI/                 # ImGui 后端、叠加层、工坊窗口
 │   │   ├── Themes/         # HakoniwaTheme
-│   │   └── Windows/        # Studio / Item / Sign / WorldTab
+│   │   └── Windows/        # Studio / Item / Sign / World / Character / Schematic / VanillaDebug
 │   └── Properties/         # launchSettings
 ├── tests/Hakoniwa.Tests/   # xUnit 风格测试工程
 ├── libs/                   # ReLogic.dll 引用
@@ -31,8 +31,8 @@ Hakoniwa/
 
 **`src/Core/`:**
 - Purpose: 进程引导、MonoMod 生命周期、对 Terraria 世界与规则的读写突破。
-- Contains: `GameHost`、`AppUpdate`、`HookManager`、`CheatHooks`、原生文本编辑、格子访问、物品目录与背包套装。
-- Key files: `GameHost.cs`, `AppUpdate.cs`, `HookManager.cs`, `CheatHooks.cs`, `TextEditor.cs`, `NativeTextInput.cs`, `TileAccessor.cs`, `SchematicWorld.cs`
+- Contains: `GameHost`、`AppUpdate`、`HookManager`、`CheatHooks`、`MapReveal`、原生文本编辑、格子访问、物品目录、背包与角色外观套装。
+- Key files: `GameHost.cs`, `AppUpdate.cs`, `HookManager.cs`, `CheatHooks.cs`, `MapReveal.cs`, `CharacterPacks.cs`, `TextEditor.cs`, `NativeTextInput.cs`, `TileAccessor.cs`, `SchematicWorld.cs`
 
 **`src/Engine/`:**
 - Purpose: 与游戏循环解耦的编辑核心：快照、选区、笔刷、历史、蓝图格式。
@@ -42,7 +42,7 @@ Hakoniwa/
 **`src/UI/`:**
 - Purpose: Dear ImGui 交互与世界空间投影。
 - Contains: 后端、主题、叠加层、工坊窗口。
-- Key files: `HakoniwaUi.cs`, `ImGuiBackend.cs`, `Windows/StudioWindow.cs`
+- Key files: `HakoniwaUi.cs`, `ImGuiBackend.cs`, `SchematicDrawer.cs`, `Windows/StudioWindow.cs`, `Windows/SchematicLibrary.cs`, `Windows/CharacterTab.cs`
 
 **`tests/Hakoniwa.Tests/`:**
 - Purpose: 引擎与 Hook 管理器的纯逻辑测试。

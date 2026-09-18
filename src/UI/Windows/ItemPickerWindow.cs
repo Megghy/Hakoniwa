@@ -278,28 +278,26 @@ public sealed class ItemPickerWindow
         float avail = ImGui.GetContentRegionAvail().X;
         int cols = Math.Max(1, (int)(avail / Cell));
         int rows = (_hits.Count + cols - 1) / cols;
-        float height = ImGui.GetWindowHeight();
-        int first = Math.Max(0, (int)(ImGui.GetScrollY() / Cell));
-        int last = Math.Min(rows, first + (int)(height / Cell) + 2);
-        if (first > 0)
-            ImGui.Dummy(new Vector2(1f, first * Cell));
-
         var dl = ImGui.GetWindowDrawList();
-        for (int row = first; row < last; row++)
+        var clipper = ImGui.ImGuiListClipper();
+        clipper.Begin(rows, Cell);
+        while (clipper.Step())
         {
-            for (int col = 0; col < cols; col++)
+            for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++)
             {
-                int i = row * cols + col;
-                if (i >= _hits.Count)
-                    break;
-                if (col > 0)
-                    ImGui.SameLine(0f, 0f);
-                DrawCell(dl, _hits[i]);
+                for (int col = 0; col < cols; col++)
+                {
+                    int i = row * cols + col;
+                    if (i >= _hits.Count)
+                        break;
+                    if (col > 0)
+                        ImGui.SameLine(0f, 0f);
+                    DrawCell(dl, _hits[i]);
+                }
             }
         }
 
-        if (last < rows)
-            ImGui.Dummy(new Vector2(1f, (rows - last) * Cell));
+        clipper.Destroy();
         ImGui.EndChild();
     }
 
@@ -366,10 +364,18 @@ public sealed class ItemPickerWindow
         ImGui.PopID();
     }
 
+    private static int _tipId;
+    private static readonly Item Tip = new();
+
     private static void DrawItemTooltip(int id)
     {
-        var item = new Item();
-        item.SetDefaults(id);
+        if (_tipId != id)
+        {
+            Tip.SetDefaults(id);
+            _tipId = id;
+        }
+
+        var item = Tip;
 
         ImGui.BeginTooltip();
         var dl = ImGui.GetWindowDrawList();
@@ -428,7 +434,7 @@ public sealed class ItemPickerWindow
         }
 
         ImGui.Separator();
-        ImGui.TextColored(new Vector4(0.55f, 0.65f, 0.80f, 1f), "[左键] 拿取整组  |  [右键] 操作菜单  |  [中键] 收藏");
+        ImGui.TextColored(new Vector4(0.55f, 0.65f, 0.80f, 1f), "[左键] 拿取整组  |  [右键] 高级编辑  |  [中键] 收藏");
         ImGui.TextColored(Ui.Accent, "[Shift + 左键] 高级属性编辑  |  [Shift + 右键] 复制 /cw 命令");
 
         ImGui.EndTooltip();

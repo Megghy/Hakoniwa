@@ -37,6 +37,8 @@ public static class CheatHooks
     private static int _cappedHz;
     private static int _refreshHz;
     private static long _refreshHzAt;
+    private static long _menuFxSlot = -1;
+    private static int _menuFxCount;
     private const BindingFlags Flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
 
     public static void Install(HookManager hooks)
@@ -44,24 +46,35 @@ public static class CheatHooks
         if (hooks is null)
             throw new ArgumentNullException(nameof(hooks));
 
+        hooks.RegisterDetour(Req(typeof(Player), nameof(Player.Hurt), typeof(PlayerDeathReason), typeof(int), typeof(int), typeof(bool), typeof(bool), typeof(bool), typeof(int), typeof(bool)), Hurt);
+        hooks.RegisterDetour(Req(typeof(Player), nameof(Player.KillMe), typeof(PlayerDeathReason), typeof(double), typeof(int), typeof(bool)), KillMe);
         hooks.RegisterDetour(Req(typeof(Player), nameof(Player.ConsumeItem), typeof(int), typeof(bool), typeof(bool)), ConsumeItem);
         hooks.RegisterDetour(Req(typeof(Player), nameof(Player.ItemCheck)), ItemCheck);
+        hooks.RegisterDetour(
+            Req(typeof(Player), nameof(Player.PlaceThing), typeof(bool), typeof(Player.ItemCheckContext).MakeByRefType()),
+            new PlaceThingHook(PlaceThing));
         hooks.RegisterDetour(Req(typeof(Player), nameof(Player.ResetEffects)), ResetEffects);
         hooks.RegisterDetour(Req(typeof(Player), nameof(Player.DryCollision), typeof(bool), typeof(bool)), DryCollision);
         hooks.RegisterDetour(Req(typeof(Player), nameof(Player.WetCollision), typeof(bool), typeof(bool), typeof(float)), WetCollision);
         hooks.RegisterDetour(Req(typeof(Player), nameof(Player.SlopingCollision), typeof(bool), typeof(bool)), SlopingCollision);
+        hooks.RegisterDetour(Req(typeof(Player), nameof(Player.TryBouncingBlocks), typeof(bool)), TryBouncingBlocks);
         hooks.RegisterDetour(Req(typeof(Player), nameof(Player.IsInTileInteractionRange), typeof(int), typeof(int), typeof(TileReachCheckSettings), typeof(int)), InRange);
+        hooks.RegisterDetour(Req(typeof(Player), "PlaceThing_Tiles_BlockPlacementForAssortedThings", typeof(bool)), BlockPlacementForAssortedThings);
+        hooks.RegisterDetour(Req(typeof(Player), "PlaceThing_Walls"), PlaceThingWalls);
         hooks.RegisterDetour(Req(typeof(WorldGen), nameof(WorldGen.PlaceTile), typeof(int), typeof(int), typeof(int), typeof(bool), typeof(bool), typeof(int), typeof(int)), PlaceTile);
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.Update), typeof(GameTime)), Update);
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.SetTitle), typeof(bool)), SetTitle);
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.UpdateDisplaySettings)), UpdateDisplaySettings);
         hooks.RegisterDetour(Req(typeof(PlayerInput), nameof(PlayerInput.UpdateInput)), UpdateInput);
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.HandleIME)), HandleIME);
+        hooks.RegisterDetour(Req(typeof(Main), nameof(Main.DrawIMEPanel)), DrawIMEPanel);
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.ClearHoverItem)), ClearHoverItem);
         hooks.RegisterDetour(Req(typeof(Main), "DrawInterface_36_Cursor"), DrawInterfaceCursor);
         hooks.RegisterDetour(Req(typeof(Player), nameof(Player.SavePlayer), typeof(PlayerFileData), typeof(bool), typeof(bool)), SavePlayer);
         hooks.RegisterDetour(Req(typeof(Lighting), nameof(Lighting.LightTiles), typeof(Rectangle)), LightTiles);
         hooks.RegisterDetour(Req(typeof(RemadeChatMonitor), nameof(RemadeChatMonitor.DrawChat), typeof(bool)), DrawVanillaChat);
+        hooks.RegisterDetour(Req(typeof(Cloud), nameof(Cloud.UpdateClouds)), UpdateClouds);
+        hooks.RegisterDetour(Req(typeof(Star), nameof(Star.UpdateStars)), UpdateStars);
     }
 
     private static void DrawInterfaceCursor(Action orig)
@@ -97,11 +110,65 @@ public static class CheatHooks
         return method;
     }
 
+    private static double Hurt(Func<Player, PlayerDeathReason, int, int, bool, bool, bool, int, bool, double> orig, Player self, PlayerDeathReason source, int damage, int hitDirection, bool pvp, bool quiet, bool crit, int cooldown, bool dodgeable)
+    {
+        if (CheatState.GodMode && self.whoAmI == Main.myPlayer)
+            return 0;
+        return orig(self, source, damage, hitDirection, pvp, quiet, crit, cooldown, dodgeable);
+    }
+
+    private static void KillMe(Action<Player, PlayerDeathReason, double, int, bool> orig, Player self, PlayerDeathReason source, double dmg, int hitDirection, bool pvp)
+    {
+        if (CheatState.GodMode && self.whoAmI == Main.myPlayer)
+            return;
+        orig(self, source, dmg, hitDirection, pvp);
+    }
+
     private static bool ConsumeItem(Func<Player, int, bool, bool, bool> orig, Player self, int type, bool reverseOrder, bool includeVoidBag)
     {
         if (CheatState.InfiniteItems && self.whoAmI == Main.myPlayer)
             return true;
         return orig(self, type, reverseOrder, includeVoidBag);
+    }
+
+    private delegate void PlaceThingOrig(Player self, bool doPlacementAction, ref Player.ItemCheckContext context);
+    private delegate void PlaceThingHook(PlaceThingOrig orig, Player self, bool doPlacementAction, ref Player.ItemCheckContext context);
+
+    private static void PlaceThing(PlaceThingOrig orig, Player self, bool doPlacementAction, ref Player.ItemCheckContext context)
+    {
+        Item item = self.inventory[self.selectedItem];
+        if (CheatState.InfiniteReach && self.whoAmI == Main.myPlayer && (item.createTile >= 0 || item.createWall > 0))
+            self.itemTime = 0;
+        orig(self, doPlacementAction, ref context);
+    }
+
+    private static bool BlockPlacementForAssortedThings(Func<Player, bool, bool> orig, Player self, bool canPlace)
+    {
+        if (orig(self, canPlace))
+            return true;
+        return CheatState.FreePlacement && self.whoAmI == Main.myPlayer;
+    }
+
+    private static void PlaceThingWalls(Action<Player> orig, Player self)
+    {
+        orig(self);
+        if (!CheatState.FreePlacement || self.whoAmI != Main.myPlayer)
+            return;
+        Item item = self.inventory[self.selectedItem];
+        int x = Player.tileTargetX;
+        int y = Player.tileTargetY;
+        if (item.createWall <= 0 || !self.ItemTimeIsZero || self.itemAnimation <= 0 || !self.controlUseItem)
+            return;
+        if (Main.tile[x, y].wall == item.createWall)
+            return;
+        if (!self.IsInTileInteractionRange(x, y, TileReachCheckSettings.Simple, item.tileBoost + self.blockRange))
+            return;
+        WorldGen.PlaceWall(x, y, item.createWall);
+        if (Main.tile[x, y].wall != item.createWall)
+            return;
+        self.ApplyItemTime(item, self.wallSpeed);
+        if (Main.netMode == 1)
+            NetMessage.SendData(17, -1, -1, null, 3, x, y, item.createWall);
     }
 
     private static void ItemCheck(Action<Player> orig, Player self)
@@ -140,9 +207,6 @@ public static class CheatHooks
             Player.tileRangeX = 1000;
             Player.tileRangeY = 1000;
             self.blockRange = 1000;
-            self.tileSpeed = 0.01f;
-            self.wallSpeed = 0.01f;
-            self.pickSpeed = 0.01f;
         }
 
         if (CheatState.NoClip)
@@ -150,7 +214,8 @@ public static class CheatHooks
 
         if (!CheatState.GodMode)
             return;
-        self.creativeGodMode = true;
+        self.statLife = self.statLifeMax2;
+        self.breath = self.breathMax;
         for (int i = 0; i < Player.maxBuffs; i++)
         {
             int type = self.buffType[i];
@@ -189,10 +254,24 @@ public static class CheatHooks
         orig(self, fallThrough, ignorePlats);
     }
 
+    private static void TryBouncingBlocks(Action<Player, bool> orig, Player self, bool falling)
+    {
+        if (CheatState.NoClip && self.whoAmI == Main.myPlayer)
+            return;
+        orig(self, falling);
+    }
+
     private static bool NoClipStep(Player self)
     {
         if (!CheatState.NoClip || self.whoAmI != Main.myPlayer)
             return false;
+        if (self.controlJump)
+        {
+            // 与原版 WingMovement 默认上升上限一致（jumpSpeed * 1.5）；已有更快的翅膀速度则保留。
+            float up = -Player.jumpSpeed * 1.5f * self.gravDir;
+            self.velocity.Y = self.gravDir > 0f ? Math.Min(self.velocity.Y, up) : Math.Max(self.velocity.Y, up);
+        }
+
         self.position += self.velocity;
         float pad = 640f;
         self.position.X = MathHelper.Clamp(self.position.X, Main.leftWorld + pad, Main.rightWorld - pad - self.width);
@@ -262,12 +341,24 @@ public static class CheatHooks
     {
         PreUpdate?.Invoke();
         orig(self, time);
+        ApplyGodFlight();
         CharacterPacks.Tick();
         MapReveal.Tick();
         ApplyLighting();
         ApplyTime();
         CheatState.SaveIfDirty();
         PostUpdate?.Invoke();
+    }
+
+    private static void ApplyGodFlight()
+    {
+        if (!CheatState.GodMode)
+            return;
+        var player = Main.LocalPlayer;
+        if (!player.active)
+            return;
+        player.wingTime = player.wingTimeMax;
+        player.rocketTime = player.rocketTimeMax;
     }
 
     public static void ApplyFpsUnlock()
@@ -305,6 +396,33 @@ public static class CheatHooks
         self.TargetElapsedTime = TimeSpan.FromTicks(TimeSpan.TicksPerSecond / hz);
     }
 
+    private static bool MenuFxDue()
+    {
+        if (!CheatState.UnlockFps || !Main.gameMenu)
+            return true;
+        long slot = LogicClock.ElapsedTicks / (Stopwatch.Frequency / 60);
+        if (slot != _menuFxSlot)
+        {
+            _menuFxSlot = slot;
+            _menuFxCount = 0;
+        }
+
+        _menuFxCount++;
+        return _menuFxCount <= 2;
+    }
+
+    private static void UpdateClouds(Action orig)
+    {
+        if (MenuFxDue())
+            orig();
+    }
+
+    private static void UpdateStars(Action orig)
+    {
+        if (MenuFxDue())
+            orig();
+    }
+
     private static int RefreshHz()
     {
         long now = LogicClock.ElapsedMilliseconds;
@@ -320,21 +438,39 @@ public static class CheatHooks
 
     private static void HandleIME(Action<Main> orig, Main self)
     {
-        if (WantTextInput)
+        if (WantTextInput || NativeTextInput.Busy)
             PlayerInput.WritingText = true;
         orig(self);
-        if (BlockGameKeyboard)
+        if (BlockGameKeyboard || NativeTextInput.Busy)
             PlayerInput.WritingText = true;
+    }
+
+    private static void DrawIMEPanel(Action<Main> orig, Main self)
+    {
+        int w = Main.screenWidth;
+        int h = Main.screenHeight;
+        int mx = Main.mouseX;
+        int my = Main.mouseY;
+        int lx = Main.lastMouseX;
+        int ly = Main.lastMouseY;
+        orig(self);
+        // 只撤销 DrawIMEPanel 自己的 SetZoom_UI，不要整帧强制 Unscaled，否则画面底部会空出一条。
+        Main.screenWidth = w;
+        Main.screenHeight = h;
+        Main.mouseX = mx;
+        Main.mouseY = my;
+        Main.lastMouseX = lx;
+        Main.lastMouseY = ly;
     }
 
     private static void UpdateInput(Action orig)
     {
-        if (BlockGameKeyboard)
+        if (BlockGameKeyboard || NativeTextInput.Busy)
             PlayerInput.WritingText = true;
         orig();
-        if (BlockGameKeyboard)
+        if (BlockGameKeyboard || NativeTextInput.Busy)
             PlayerInput.WritingText = true;
-        if (WantTextInput)
+        if (WantTextInput || NativeTextInput.Busy)
             Main.instance.HandleIME();
 
         var kb = Keyboard.GetState();

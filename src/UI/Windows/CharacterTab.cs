@@ -239,28 +239,42 @@ internal static class CharacterTab
         const float cellH = 64f;
         float gap = 4f;
         int cols = Math.Max(1, (int)((ImGui.GetContentRegionAvail().X + gap) / (cellW + gap)));
-        for (int i = 0; i < Main.maxHairStyles; i++)
-        {
-            if (i > 0 && i % cols != 0)
-                ImGui.SameLine(0f, gap);
-            ImGui.PushID(i);
-            var pos = ImGui.GetCursorScreenPos();
-            if (ImGui.InvisibleButton("h", new Vector2(cellW, cellH)))
-            {
-                player.hair = i;
-                changed = true;
-            }
+        int rows = (Main.maxHairStyles + cols - 1) / cols;
+        float rowH = cellH + gap;
+        int first = Math.Max(0, (int)(ImGui.GetScrollY() / rowH));
+        int last = Math.Min(rows, first + (int)(ImGui.GetWindowHeight() / rowH) + 2);
+        if (first > 0)
+            ImGui.Dummy(new Vector2(1f, first * rowH));
 
-            bool on = player.hair == i;
-            bool hover = ImGui.IsItemHovered();
-            var max = pos + new Vector2(cellW, cellH);
-            dl.AddRectFilled(pos, max, on ? 0xF8243048 : (hover ? 0xF8182030 : 0xF010141F));
-            dl.AddRect(pos, max, on ? Ui.GoldBorder : Ui.ChipLine);
-            if (ImGui.IsItemVisible())
+        for (int row = first; row < last; row++)
+        {
+            for (int col = 0; col < cols; col++)
+            {
+                int i = row * cols + col;
+                if (i >= Main.maxHairStyles)
+                    break;
+                if (col > 0)
+                    ImGui.SameLine(0f, gap);
+                ImGui.PushID(i);
+                var pos = ImGui.GetCursorScreenPos();
+                if (ImGui.InvisibleButton("h", new Vector2(cellW, cellH)))
+                {
+                    player.hair = i;
+                    changed = true;
+                }
+
+                bool on = player.hair == i;
+                bool hover = ImGui.IsItemHovered();
+                var max = pos + new Vector2(cellW, cellH);
+                dl.AddRectFilled(pos, max, on ? 0xF8243048 : (hover ? 0xF8182030 : 0xF010141F));
+                dl.AddRect(pos, max, on ? Ui.GoldBorder : Ui.ChipLine);
                 DrawHairThumb(dl, pos, cellW, cellH, i, player);
-            ImGui.PopID();
+                ImGui.PopID();
+            }
         }
 
+        if (last < rows)
+            ImGui.Dummy(new Vector2(1f, (rows - last) * rowH));
         ImGui.EndChild();
     }
 

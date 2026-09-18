@@ -37,8 +37,8 @@ public static class SelectionOverlay
         (Act.Fill, Edge.Bottom, Icons.Colors, "填充选区\n用手持物块填满"),
         (Act.Replace, Edge.Bottom, Icons.Reload, "替换模式\n点击选区内物块，用持有物块替换同类"),
         (Act.SkipAir, Edge.Left, Icons.Earth, "跳过空气\n开启后空气格保留地图原有内容"),
-        (Act.CopyMove, Edge.TopRight, Icons.SectionCopy, "复制并移动"),
-        (Act.CutMove, Edge.TopRight, Icons.Move, "剪切并移动"),
+        (Act.CopyMove, Edge.TopRight, Icons.SectionCopy, "复制并移动\n按住并拖动选区"),
+        (Act.CutMove, Edge.TopRight, Icons.Move, "剪切并移动\n按住并拖动选区"),
         (Act.Cancel, Edge.TopRight, Icons.Close, "取消选区"),
         (Act.Confirm, Edge.Bar, "", "确认写入地图"),
         (Act.CancelPaste, Edge.Bar, "", "取消粘贴"),
@@ -372,9 +372,6 @@ public static class SelectionOverlay
         if (!Ui.BeginChrome($"##selAct{i}", BtnMin[i], size))
             return;
         bool move = id is Act.CopyMove or Act.CutMove;
-        bool on = id == Act.Replace && EditorSession.ReplaceMode
-            || id == Act.SkipAir && EditorSession.PasteSkipAir
-            || _drag == Drag.MoveTiles && (id == (_cutMove ? Act.CutMove : Act.CopyMove));
         Ui.Invisible("##a", BtnMin[i], size);
         bool hover = ImGui.IsItemHovered();
         if (id == Act.Replace && ImGui.IsItemClicked())
@@ -385,13 +382,20 @@ public static class SelectionOverlay
             BeginHoldMove((int)(Main.MouseWorld.X / 16f), (int)(Main.MouseWorld.Y / 16f), id == Act.CutMove);
         else if (!move && id is not (Act.Replace or Act.SkipAir) && ImGui.IsItemClicked())
             Invoke(i);
+        bool on = id == Act.Replace && EditorSession.ReplaceMode
+            || id == Act.SkipAir && EditorSession.PasteSkipAir
+            || _drag == Drag.MoveTiles && (id == (_cutMove ? Act.CutMove : Act.CopyMove));
         if (hover)
-            _tip = Actions[i].Tip;
+            _tip = id == Act.SkipAir
+                ? (EditorSession.PasteSkipAir ? "跳过空气：开\n空气格保留地图原有内容" : "跳过空气：关\n空气格会写入地图")
+                : Actions[i].Tip;
 
         var dl = ImGui.GetWindowDrawList();
         float round = big ? 6f : 11f;
-        dl.AddRectFilled(BtnMin[i], BtnMax[i], hover || on ? Ui.ChipHover : Ui.ChipIdle, round);
-        dl.AddRect(BtnMin[i], BtnMax[i], hover || on || id == Act.Confirm ? Ui.ChipOn : Ui.ChipLine, round);
+        uint fill = on ? 0xE8302848 : (hover ? Ui.ChipHover : Ui.ChipIdle);
+        uint border = on ? Ui.GoldBorder : (hover || id == Act.Confirm ? Ui.ChipOn : Ui.ChipLine);
+        dl.AddRectFilled(BtnMin[i], BtnMax[i], fill, round);
+        dl.AddRect(BtnMin[i], BtnMax[i], border, round, ImDrawFlags.None, on ? 2f : 1f);
         if (big)
         {
             string label = id == Act.Confirm ? "确认" : "取消";
@@ -399,7 +403,7 @@ public static class SelectionOverlay
             dl.AddText((BtnMin[i] + BtnMax[i] - ts) * 0.5f, 0xFFF1F5F9, label);
         }
         else
-            Icons.DrawDirect(dl, (BtnMin[i] + BtnMax[i]) * 0.5f, Actions[i].Icon);
+            Icons.DrawDirect(dl, (BtnMin[i] + BtnMax[i]) * 0.5f, Actions[i].Icon, 255, on ? Ui.GoldBorder : 0);
         Ui.EndChrome();
     }
 

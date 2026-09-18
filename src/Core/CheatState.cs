@@ -26,6 +26,7 @@ public static class CheatState
     public static float NotifyScale = 1f;
     public static float? ToolbarX;
     public static float? ToolbarY;
+    public static float? BallX;
     public static float? BallY;
     public static bool? BallRight;
     public static readonly HashSet<int> Favorites = [];
@@ -73,6 +74,7 @@ public static class CheatState
             NotifyScale = data.NotifyScale;
         ToolbarX = data.ToolbarX;
         ToolbarY = data.ToolbarY;
+        BallX = data.BallX;
         BallY = data.BallY;
         BallRight = data.BallRight;
         Favorites.Clear();
@@ -111,6 +113,7 @@ public static class CheatState
         NotifyScale = NotifyScale,
         ToolbarX = ToolbarX,
         ToolbarY = ToolbarY,
+        BallX = BallX,
         BallY = BallY,
         BallRight = BallRight,
         Favorites = SnapshotFavorites(),
@@ -141,6 +144,7 @@ public static class CheatState
         public float NotifyScale { get; set; } = 1f;
         public float? ToolbarX { get; set; }
         public float? ToolbarY { get; set; }
+        public float? BallX { get; set; }
         public float? BallY { get; set; }
         public bool? BallRight { get; set; }
         public int[]? Favorites { get; set; }

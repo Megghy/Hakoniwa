@@ -166,8 +166,7 @@ internal static class WorldTab
     {
         var player = Main.LocalPlayer;
         var world = new Microsoft.Xna.Framework.Vector2(Main.spawnTileX * 16f, Main.spawnTileY * 16f - player.height);
-        player.velocity = Microsoft.Xna.Framework.Vector2.Zero;
-        player.Teleport(world, 1);
+        HakoniwaUi.PlaceLocalPlayer(world);
     }
 
     private static void SpawnTown(int type)

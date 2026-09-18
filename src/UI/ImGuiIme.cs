@@ -30,6 +30,13 @@ internal sealed unsafe class ImGuiIme : IDisposable
 
     public void Flush(ImGuiIOPtr io)
     {
+        if (NativeTextInput.Busy || !io.WantTextInput)
+        {
+            _chars.Clear();
+            Composing = false;
+            return;
+        }
+
         foreach (char ch in _chars)
             io.AddInputCharacter(ch);
         _chars.Clear();

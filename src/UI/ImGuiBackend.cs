@@ -403,6 +403,18 @@ public sealed class ImGuiBackend : IDisposable
 
     private void UpdateInput(ImGuiIOPtr io)
     {
+        bool focused = Main.instance.IsActive;
+        io.AddFocusEvent(focused);
+        if (!focused)
+        {
+            io.AddMousePosEvent(-float.MaxValue, -float.MaxValue);
+            io.AddMouseButtonEvent(0, false);
+            io.AddMouseButtonEvent(1, false);
+            io.AddMouseButtonEvent(2, false);
+            io.AddMouseWheelEvent(0f, 0f);
+            return;
+        }
+
         var mouse = Mouse.GetState();
         var scale = PlayerInput.RawMouseScale;
         io.AddMousePosEvent(mouse.X * scale.X, mouse.Y * scale.Y);
