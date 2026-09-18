@@ -41,7 +41,11 @@ jobs:
           Push-Location $env:TerrariaDir
           $items = @("Hakoniwa.exe", "Hakoniwa", "version.txt")
           if (Test-Path "Hakoniwa.exe.config") { $items += "Hakoniwa.exe.config" }
-          tar.exe -a -c -f $zip --exclude=*.pdb @items
+          Remove-Item -Force -ErrorAction SilentlyContinue @(
+            "$env:TerrariaDir\Hakoniwa\Hakoniwa.exe",
+            "$env:TerrariaDir\Hakoniwa\Hakoniwa.exe.config",
+            "$env:TerrariaDir\Hakoniwa\Hakoniwa.pdb")
+          tar.exe -a -c -f $zip --exclude=*.pdb --exclude=Hakoniwa/Hakoniwa.exe --exclude=Hakoniwa/Hakoniwa.exe.config @items
           Pop-Location
 
       - uses: softprops/action-gh-release@v2

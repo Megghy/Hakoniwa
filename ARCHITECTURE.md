@@ -15,7 +15,7 @@
 
 ```mermaid
 flowchart TD
-    Program["Program.cs"]
+    Program["Program.cs (AppUpdate → GameHost)"]
     Host["GameHost (定位 Terraria / AssemblyResolve)"]
     UI["Hakoniwa.UI (ImGui 面板 + 世界投影)"]
     Engine["Hakoniwa.Engine (选区 / 变换 / 蓝图 IO)"]
@@ -34,10 +34,12 @@ flowchart TD
 
 ### 2.1 Hakoniwa.Core (`src/Core/`)
 - `GameHost`：定位 `Terraria.exe` 目录、`AssemblyResolve`、加载 `CheatState` / `InventoryPacks`、安装 Hook 与 UI，再 `Terraria.Program.LaunchGame`。
+- `AppUpdate`：启动时从 `latest.json` 检查 GitHub Release；`--no-update` / `--updated` 跳过。`dev` 版本不自更新。
 - `HookManager`：统一注册 `Hook` / `ILHook`，`Dispose` 时逆序释放。
-- `CheatHooks` + `CheatState`：无限达距、防消耗、浮空放置、全图照明（`FullbrightEngine`）等运行时规则突破；状态持久化到本地 JSON。
+- `CheatHooks` + `CheatState`：无限达距、防消耗、浮空放置、全图照明（`FullbrightEngine`）、无碰撞（含干燥/湿润碰撞跳过）等运行时规则突破；状态持久化到本地 JSON。
 - `TileAccessor` / `WorldTiles` / `ITileGrid`：统一世界格子读写；`SchematicWorld` 把蓝图粘贴到活世界。
 - `ItemCatalog` / `InventoryPacks` / `CustomWeaponData` / `ItemTooltipExtra`：物品目录、背包套装、自定义武器与 Tooltip 扩展。
+- `NativeTextInput` / `TextEditor` / `NativeTextDraw` / `NativeTextSelect` / `WordBoundary`：游戏内聊天与标牌的光标、选区、撤销与词边界编辑；`ImGuiIme` 切换输入模式。
 - `Notices`：游戏内通知事件，UI 侧 `NotifyHost` 消费。
 
 ### 2.2 Hakoniwa.Engine (`src/Engine/`)
@@ -45,7 +47,7 @@ flowchart TD
 - `Selection` + `EditorSession`：选区、剪贴板、幽灵预览与工具会话。
 - `TransformEngine`：90°/180°/270° 旋转、水平/垂直翻转。
 - `ToolEngine`：圆形/矩形/菱形笔刷、带遮罩 Flood Fill、橡皮擦。
-- `HistoryStack`：编辑操作撤销/重做。
+- `HistoryStack` + `TileStrokeRecorder`：编辑撤销/重做；同一笔画笔划合并为一次 Undo。
 - `Schematic` / `SchematicEntity` + `SchematicSerializer`：Zstd 压缩 `.schem` 导入导出。
 
 ### 2.3 Hakoniwa.UI (`src/UI/`)
@@ -57,5 +59,6 @@ flowchart TD
 
 ### 2.4 构建与测试
 - 唯一产物：`src/Hakoniwa.csproj` → `Hakoniwa.exe`，`OutputPath` 直接指向 `$(TerrariaDir)`；构建后 `set-laa.ps1` 打 LAA，并拷贝 x86 `cimgui.dll`。
-- 共享 SDK：根 `Directory.Build.props`（`net48`、x86、`LangVersion=latest`、PolySharp）。
-- 测试：`tests/Hakoniwa.Tests/` 覆盖 HookManager、Schematic、TileDataBlock、ToolEngine、ImGui 平台。
+- 共享 SDK：根 `Directory.Build.props`（`net48`、x86、`LangVersion=latest`、PolySharp、`Version`）。
+- 发布：`.github/workflows/release.yml` 打 tag 后编译并上传 GitHub Release。
+- 测试：`tests/Hakoniwa.Tests/` 覆盖 HookManager、Schematic、TileDataBlock、ToolEngine、TextEditor、ImGui 平台。

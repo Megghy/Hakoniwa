@@ -5,11 +5,11 @@
 ```
 Hakoniwa/
 ├── src/                    # 唯一应用工程
-│   ├── Program.cs          # 入口：异常落盘后交给 GameHost
+│   ├── Program.cs          # 入口：AppUpdate 后交给 GameHost
 │   ├── Hakoniwa.csproj     # WinExe / net48 / x86
 │   ├── set-laa.ps1         # 构建后 Large Address Aware
 │   ├── Assets/Fonts/       # 拷贝到输出目录的字体
-│   ├── Core/               # Hook、主机、世界读写、物品/作弊状态
+│   ├── Core/               # Hook、主机、更新、原生文本、物品/作弊
 │   ├── Engine/             # 选区、工具、变换、蓝图 IO
 │   │   ├── Data/           # Schematic / TileDataBlock
 │   │   ├── IO/             # SchematicSerializer
@@ -20,7 +20,8 @@ Hakoniwa/
 │   └── Properties/         # launchSettings
 ├── tests/Hakoniwa.Tests/   # xUnit 风格测试工程
 ├── libs/                   # ReLogic.dll 引用
-├── Directory.Build.props   # 共享 TFM / LangVersion / PolySharp
+├── .github/workflows/      # release.yml tag 构建
+├── Directory.Build.props   # 共享 TFM / LangVersion / PolySharp / Version
 ├── Hakoniwa.sln            # 解决方案
 ├── ARCHITECTURE.md
 └── AGENTS.md
@@ -30,13 +31,13 @@ Hakoniwa/
 
 **`src/Core/`:**
 - Purpose: 进程引导、MonoMod 生命周期、对 Terraria 世界与规则的读写突破。
-- Contains: `GameHost`、`HookManager`、`CheatHooks`、格子访问、物品目录与背包套装。
-- Key files: `GameHost.cs`, `HookManager.cs`, `CheatHooks.cs`, `TileAccessor.cs`, `SchematicWorld.cs`
+- Contains: `GameHost`、`AppUpdate`、`HookManager`、`CheatHooks`、原生文本编辑、格子访问、物品目录与背包套装。
+- Key files: `GameHost.cs`, `AppUpdate.cs`, `HookManager.cs`, `CheatHooks.cs`, `TextEditor.cs`, `NativeTextInput.cs`, `TileAccessor.cs`, `SchematicWorld.cs`
 
 **`src/Engine/`:**
 - Purpose: 与游戏循环解耦的编辑核心：快照、选区、笔刷、历史、蓝图格式。
 - Contains: 值类型数据、序列化、工具算法。
-- Key files: `EditorSession.cs`, `Tools/ToolEngine.cs`, `IO/SchematicSerializer.cs`
+- Key files: `EditorSession.cs`, `TileStrokeRecorder.cs`, `Tools/ToolEngine.cs`, `Tools/HistoryStack.cs`, `IO/SchematicSerializer.cs`
 
 **`src/UI/`:**
 - Purpose: Dear ImGui 交互与世界空间投影。
@@ -45,14 +46,14 @@ Hakoniwa/
 
 **`tests/Hakoniwa.Tests/`:**
 - Purpose: 引擎与 Hook 管理器的纯逻辑测试。
-- Key files: `ToolEngineTests.cs`, `SchematicTests.cs`, `HookManagerTests.cs`
+- Key files: `ToolEngineTests.cs`, `SchematicTests.cs`, `TextEditorTests.cs`, `HookManagerTests.cs`
 
 **`libs/`:**
 - Purpose: 游戏侧非 NuGet 程序集（`ReLogic.dll`）。不要把密钥或 `.env` 放这里。
 
 ## Key File Locations
 
-**Entry Points:** `src/Program.cs` → `Core/GameHost.Run` → `Terraria.Program.LaunchGame`
+**Entry Points:** `src/Program.cs` → `AppUpdate.TryApply` → `Core/GameHost.Run` → `Terraria.Program.LaunchGame`
 **UI install:** `src/UI/HakoniwaUi.cs`（`Main.OnEngineLoad` / `OnPostDraw`）
 **Configuration:** `Directory.Build.props`、`src/Hakoniwa.csproj`、`src/Properties/launchSettings.json`
 **Core Logic:** `src/Core/`、`src/Engine/`
