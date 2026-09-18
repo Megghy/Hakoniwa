@@ -56,6 +56,7 @@ public static class SelectionOverlay
     private static readonly Num.Vector2[] BtnMax = new Num.Vector2[Actions.Length];
     private static Schematic? _payload;
     private static bool _cutMove;
+    private static bool _drawPaste;
     private static string? _tip;
 
     public static bool OverrideCursor { get; private set; }
@@ -343,6 +344,7 @@ public static class SelectionOverlay
 
     private static void DrawButtons(Num.Vector2 min, Num.Vector2 max)
     {
+        _drawPaste = EditorSession.Pasting;
         var display = ImGui.GetIO().DisplaySize;
         PlaceEdge(Edge.Top, min, max, display);
         PlaceEdge(Edge.Bottom, min, max, display);
@@ -358,7 +360,7 @@ public static class SelectionOverlay
         }
     }
 
-    private static bool Shown(Act id) => EditorSession.Pasting
+    private static bool Shown(Act id) => _drawPaste
         ? id is Act.FlipH or Act.FlipV or Act.Rotate or Act.SkipAir or Act.Confirm or Act.CancelPaste
         : id is not (Act.SkipAir or Act.Confirm or Act.CancelPaste);
 

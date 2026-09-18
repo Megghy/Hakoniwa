@@ -1,17 +1,18 @@
-using System;
+using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
+using Microsoft.Xna.Framework;
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Graphics;
-using Microsoft.Xna.Framework.Input;
-using Terraria;
-using Terraria.DataStructures;
-using Terraria.GameInput;
+using System;
+
 using Hakoniwa.Engine;
+using Terraria.DataStructures;
 using Terraria.GameContent.UI.Chat;
+using Terraria.GameInput;
 using Terraria.Graphics.Light;
 using Terraria.IO;
+using Terraria;
 
 namespace Hakoniwa.Core;
 
@@ -43,13 +44,12 @@ public static class CheatHooks
         if (hooks is null)
             throw new ArgumentNullException(nameof(hooks));
 
-        hooks.RegisterDetour(Req(typeof(Player), nameof(Player.Hurt), typeof(PlayerDeathReason), typeof(int), typeof(int), typeof(bool), typeof(bool), typeof(bool), typeof(int), typeof(bool)), Hurt);
-        hooks.RegisterDetour(Req(typeof(Player), nameof(Player.KillMe), typeof(PlayerDeathReason), typeof(double), typeof(int), typeof(bool)), KillMe);
         hooks.RegisterDetour(Req(typeof(Player), nameof(Player.ConsumeItem), typeof(int), typeof(bool), typeof(bool)), ConsumeItem);
         hooks.RegisterDetour(Req(typeof(Player), nameof(Player.ItemCheck)), ItemCheck);
         hooks.RegisterDetour(Req(typeof(Player), nameof(Player.ResetEffects)), ResetEffects);
         hooks.RegisterDetour(Req(typeof(Player), nameof(Player.DryCollision), typeof(bool), typeof(bool)), DryCollision);
         hooks.RegisterDetour(Req(typeof(Player), nameof(Player.WetCollision), typeof(bool), typeof(bool), typeof(float)), WetCollision);
+        hooks.RegisterDetour(Req(typeof(Player), nameof(Player.SlopingCollision), typeof(bool), typeof(bool)), SlopingCollision);
         hooks.RegisterDetour(Req(typeof(Player), nameof(Player.IsInTileInteractionRange), typeof(int), typeof(int), typeof(TileReachCheckSettings), typeof(int)), InRange);
         hooks.RegisterDetour(Req(typeof(WorldGen), nameof(WorldGen.PlaceTile), typeof(int), typeof(int), typeof(int), typeof(bool), typeof(bool), typeof(int), typeof(int)), PlaceTile);
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.Update), typeof(GameTime)), Update);
@@ -95,20 +95,6 @@ public static class CheatHooks
         if (method is null)
             throw new MissingMethodException(type.FullName, name);
         return method;
-    }
-
-    private static double Hurt(Func<Player, PlayerDeathReason, int, int, bool, bool, bool, int, bool, double> orig, Player self, PlayerDeathReason source, int damage, int hitDirection, bool pvp, bool quiet, bool crit, int cooldown, bool dodgeable)
-    {
-        if (CheatState.GodMode && self.whoAmI == Main.myPlayer)
-            return 0;
-        return orig(self, source, damage, hitDirection, pvp, quiet, crit, cooldown, dodgeable);
-    }
-
-    private static void KillMe(Action<Player, PlayerDeathReason, double, int, bool> orig, Player self, PlayerDeathReason source, double dmg, int hitDirection, bool pvp)
-    {
-        if (CheatState.GodMode && self.whoAmI == Main.myPlayer)
-            return;
-        orig(self, source, dmg, hitDirection, pvp);
     }
 
     private static bool ConsumeItem(Func<Player, int, bool, bool, bool> orig, Player self, int type, bool reverseOrder, bool includeVoidBag)
@@ -164,11 +150,7 @@ public static class CheatHooks
 
         if (!CheatState.GodMode)
             return;
-        self.statLife = self.statLifeMax2;
-        self.statMana = self.statManaMax2;
-        self.immune = true;
-        self.immuneTime = 2;
-        self.breath = self.breathMax;
+        self.creativeGodMode = true;
         for (int i = 0; i < Player.maxBuffs; i++)
         {
             int type = self.buffType[i];
@@ -198,6 +180,13 @@ public static class CheatHooks
         if (NoClipStep(self))
             return;
         orig(self, fallThrough, ignorePlats, movementSpeed);
+    }
+
+    private static void SlopingCollision(Action<Player, bool, bool> orig, Player self, bool fallThrough, bool ignorePlats)
+    {
+        if (CheatState.NoClip && self.whoAmI == Main.myPlayer)
+            return;
+        orig(self, fallThrough, ignorePlats);
     }
 
     private static bool NoClipStep(Player self)
