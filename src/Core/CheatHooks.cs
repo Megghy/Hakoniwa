@@ -274,6 +274,7 @@ public static class CheatHooks
         PreUpdate?.Invoke();
         orig(self, time);
         CharacterPacks.Tick();
+        MapReveal.Tick();
         ApplyLighting();
         ApplyTime();
         CheatState.SaveIfDirty();

@@ -70,7 +70,7 @@ internal static class WorldTab
 
         ImGui.Spacing();
         Ui.Heading(Icons.Home, "出生点 / NPC / 事件");
-        ImGui.BeginChild("world-flags-card", new Vector2(0, 220f), ImGuiChildFlags.Borders);
+        ImGui.BeginChild("world-flags-card", new Vector2(0, 256f), ImGuiChildFlags.Borders);
         Ui.DrawPixelPanel(dl, ImGui.GetWindowPos(), ImGui.GetWindowPos() + ImGui.GetWindowSize());
 
         float actionW = (ImGui.GetContentRegionAvail().X - 8f) / 3f;
@@ -82,6 +82,12 @@ internal static class WorldTab
         ImGui.SameLine(0f, 4f);
         if (ImGui.Button("全部 Boss 已击败", new Vector2(actionW, 26f)))
             SetBossesDowned(true);
+
+        if (ImGui.Button("点亮地图", new Vector2(actionW, 26f)))
+            MapReveal.Reveal();
+        ImGui.SameLine(0f, 4f);
+        if (ImGui.Button("清除地图", new Vector2(actionW, 26f)))
+            MapReveal.Clear();
 
         ImGui.Spacing();
         bool blood = Main.bloodMoon;
@@ -139,6 +145,7 @@ internal static class WorldTab
         ImGui.EndChild();
 
         ImGui.Spacing();
+        VanillaDebug.Draw();
         ImGui.TextDisabled("快捷传送：大地图右键，或世界中键。");
         ImGui.EndChild();
     }
