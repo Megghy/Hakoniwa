@@ -52,7 +52,15 @@ public static class SelectionOverlay
     private static bool _cutMove;
     private static string? _tip;
 
+    public static bool OverrideCursor { get; private set; }
+
     public static void TriggerBrushHud() => EditorOverlay.TriggerBrushHud();
+
+    public static void ReleaseCursor()
+    {
+        OverrideCursor = false;
+        CheatHooks.HideVanillaCursor = false;
+    }
 
     public static bool ShouldBlock()
     {
@@ -72,6 +80,7 @@ public static class SelectionOverlay
         {
             _drag = Drag.None;
             _left = true;
+            ReleaseCursor();
             return false;
         }
 
@@ -84,6 +93,7 @@ public static class SelectionOverlay
         if (CheatState.WaitingSelectKey)
         {
             _left = left;
+            ReleaseCursor();
             return false;
         }
 
@@ -98,6 +108,9 @@ public static class SelectionOverlay
             OnPress(sp, tx, ty, mod);
 
         _left = left;
+        OverrideCursor = _drag is Drag.Move or Drag.Resize or Drag.MoveTiles
+            || allowPress && EditorSession.Selection.Active && (HitPart(sp) != Part.None || HitButton(sp) >= 0);
+        CheatHooks.HideVanillaCursor = OverrideCursor;
         return ShouldBlock();
     }
 

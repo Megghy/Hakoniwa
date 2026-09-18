@@ -25,6 +25,7 @@ public static class CheatHooks
     public static bool BlockGameKeyboard;
     public static bool WantTextInput;
     public static bool HideVanillaChat;
+    public static bool HideVanillaCursor;
 
     private static ILightingEngine? _vanillaLighting;
     private static bool _fullBrightApplied;
@@ -56,8 +57,15 @@ public static class CheatHooks
         hooks.RegisterDetour(Req(typeof(PlayerInput), nameof(PlayerInput.UpdateInput)), UpdateInput);
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.HandleIME)), HandleIME);
         hooks.RegisterDetour(Req(typeof(Main), nameof(Main.ClearHoverItem)), ClearHoverItem);
+        hooks.RegisterDetour(Req(typeof(Main), "DrawInterface_36_Cursor"), DrawInterfaceCursor);
         hooks.RegisterDetour(Req(typeof(Lighting), nameof(Lighting.LightTiles), typeof(Rectangle)), LightTiles);
         hooks.RegisterDetour(Req(typeof(RemadeChatMonitor), nameof(RemadeChatMonitor.DrawChat), typeof(bool)), DrawVanillaChat);
+    }
+
+    private static void DrawInterfaceCursor(Action orig)
+    {
+        if (!HideVanillaCursor)
+            orig();
     }
 
     private static void DrawVanillaChat(Action<RemadeChatMonitor, bool> orig, RemadeChatMonitor self, bool drawing)

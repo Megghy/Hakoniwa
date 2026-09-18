@@ -162,7 +162,7 @@ public static class HakoniwaUi
         SignEditor.Draw();
         Chat.Draw();
         NotifyHost.Draw();
-        _backend.Render();
+        _backend.Render(SelectionOverlay.OverrideCursor);
         SyncMouseBlock();
     }
 
@@ -479,6 +479,7 @@ public static class HakoniwaUi
             EditorSession.SyncKeys(kb);
             EditorSession.Stroking = false;
             _lastScrollWheel = Mouse.GetState().ScrollWheelValue;
+            SelectionOverlay.ReleaseCursor();
             return;
         }
 
@@ -515,7 +516,11 @@ public static class HakoniwaUi
                 EditorSession.CancelPaste();
         }
 
-        bool blocked = Visible && SelectionOverlay.Update(!Ui.Mouse && !EditorSession.Pasting && !overGameUi);
+        bool blocked = false;
+        if (Visible)
+            blocked = SelectionOverlay.Update(!Ui.Mouse && !EditorSession.Pasting && !overGameUi);
+        else
+            SelectionOverlay.ReleaseCursor();
         var tool = EditorSession.Tool;
         if (Visible && !Ui.Mouse && !blocked && !EditorSession.Pasting && !overGameUi && tool != EditorTool.None)
         {
