@@ -88,11 +88,15 @@ public sealed class FloatingBall
         HandleDrag(screenSize);
 
         string? hoveredHint = null;
+        bool hoverOrbit = false;
         if (_expandAnim > 0.02f)
-            DrawOrbit(drawList, centerAngle, totalSpan, fullCircle, ref hoveredHint);
+            DrawOrbit(drawList, centerAngle, totalSpan, fullCircle, ref hoveredHint, ref hoverOrbit);
 
         DrawMainButton(drawList, _pos, hoverMain || _isDragging, _isExpanded);
         Ui.EndChrome();
+
+        if (_isExpanded && !_isDragging && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !hoverMain && !hoverOrbit)
+            _isExpanded = false;
 
         if (hoveredHint is not null && !_isDragging)
             ImGui.SetTooltip(hoveredHint);
@@ -139,7 +143,7 @@ public sealed class FloatingBall
         SoundEngine.PlaySound(12);
     }
 
-    private void DrawOrbit(ImDrawListPtr drawList, float centerAngle, float totalSpan, bool fullCircle, ref string? hoveredHint)
+    private void DrawOrbit(ImDrawListPtr drawList, float centerAngle, float totalSpan, bool fullCircle, ref string? hoveredHint, ref bool hoverOrbit)
     {
         int index = 0;
         for (int ring = 0; index < _actions.Count; ring++)
@@ -163,7 +167,10 @@ public sealed class FloatingBall
 
                 bool hover = ImGui.IsItemHovered();
                 if (hover)
+                {
+                    hoverOrbit = true;
                     hoveredHint = action.Hint;
+                }
                 DrawSubButton(drawList, subCenter, action, hover, _expandAnim);
             }
         }

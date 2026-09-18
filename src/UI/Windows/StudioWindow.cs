@@ -190,7 +190,8 @@ public sealed class StudioWindow
         // 工具切换 Chips
         int tool = (int)EditorSession.Tool;
         Ui.Chips("tools-chips", Ui.ToolNames.Length, ref tool, i => Ui.ToolNames[i], 26f);
-        EditorSession.SetTool((EditorTool)tool);
+        if (tool >= 0)
+            EditorSession.SetTool((EditorTool)tool);
 
         ImGui.Spacing();
 

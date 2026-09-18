@@ -91,8 +91,19 @@ public static class HakoniwaUi
         Ui.Sync(
             extraMouse: SignEditor.IsOpen,
             extraKeyboard: SignEditor.IsOpen || CheatState.WaitingSelectKey || Chat.InputFocused,
-            blockGameMouse: (Visible || EditorSession.Pasting) && !Main.mapFullscreen && FocusHelper.AllowInputProcessing,
+            blockGameMouse: GameMouseBlocked(),
             skipImGuiKeyboard: Chat.IsOpen && !Chat.InputFocused);
+    }
+
+    private static bool GameMouseBlocked()
+    {
+        if (Main.gameMenu || Main.mapFullscreen || Main.ingameOptionsWindow || !FocusHelper.AllowInputProcessing)
+            return false;
+        if (Main.myPlayer >= 0 && Main.player[Main.myPlayer].active && Main.player[Main.myPlayer].mouseInterface)
+            return false;
+        if (EditorSession.Pasting || SelectionOverlay.ShouldBlock())
+            return true;
+        return Visible && EditorSession.Tool is not (EditorTool.None or EditorTool.Marquee);
     }
 
     private static void CaptureSelectKey(KeyboardState kb)
@@ -159,12 +170,15 @@ public static class HakoniwaUi
     {
         const float invScale = 0.85f;
         const float row1 = 28f;
+        float ui = Main.UIScale;
         float maxW = 10f * 56f * invScale;
         MeasurePacks(maxW, out float packsW, out float packsH);
-        float x = 20f;
-        float y = 20f + 5f * 56f * invScale;
+        float x = 20f * ui;
+        float y = (20f + 5f * 56f * invScale) * ui;
         if (Main.ChestOrShopUIVisible)
-            y += 168f;
+            y += 168f * ui;
+        if (Main.editChest)
+            y += 24f * ui;
         var pos = new System.Numerics.Vector2(x, y);
         var size = new System.Numerics.Vector2(Math.Max(276f, packsW), row1 + 4f + packsH);
 
@@ -458,7 +472,7 @@ public static class HakoniwaUi
     private static void HandleEditor()
     {
         var kb = Keyboard.GetState();
-        if (!FocusHelper.AllowInputProcessing || Main.mapFullscreen || Chat.IsOpen || SignEditor.IsOpen || NativeTextInput.Busy)
+        if (!FocusHelper.AllowInputProcessing || Main.mapFullscreen || Main.ingameOptionsWindow || Chat.IsOpen || SignEditor.IsOpen || NativeTextInput.Busy)
         {
             _leftWasDown = true;
             _toolRightWasDown = true;
@@ -492,7 +506,8 @@ public static class HakoniwaUi
 
         bool left = mouseState.LeftButton == ButtonState.Pressed;
         bool right = mouseState.RightButton == ButtonState.Pressed;
-        if (EditorSession.Pasting && !Ui.Mouse)
+        bool overGameUi = Main.myPlayer >= 0 && Main.player[Main.myPlayer].mouseInterface;
+        if (EditorSession.Pasting && !Ui.Mouse && !overGameUi)
         {
             if (left && !_leftWasDown)
                 EditorSession.CommitPaste();
@@ -500,10 +515,10 @@ public static class HakoniwaUi
                 EditorSession.CancelPaste();
         }
 
-        bool blocked = Visible && SelectionOverlay.Update(!Ui.Mouse && !EditorSession.Pasting);
-        if (Visible && !Ui.Mouse && !blocked && !EditorSession.Pasting)
+        bool blocked = Visible && SelectionOverlay.Update(!Ui.Mouse && !EditorSession.Pasting && !overGameUi);
+        var tool = EditorSession.Tool;
+        if (Visible && !Ui.Mouse && !blocked && !EditorSession.Pasting && !overGameUi && tool != EditorTool.None)
         {
-            var tool = EditorSession.Tool;
             EditorSession.CursorTile(out int tx, out int ty);
             if (tool == EditorTool.Shape)
             {

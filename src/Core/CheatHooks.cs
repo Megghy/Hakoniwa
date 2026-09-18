@@ -32,6 +32,9 @@ public static class CheatHooks
     private static long _nextLogicTick;
     private static bool _prepHooked;
     private static bool _fpsApplied;
+    private static int _cappedHz;
+    private static int _refreshHz;
+    private static long _refreshHzAt;
     private const BindingFlags Flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
 
     public static void Install(HookManager hooks)
@@ -223,7 +226,6 @@ public static class CheatHooks
         {
             _nextLogicTick += step;
             RunLogic(orig, self, time);
-            CapTo(self, RefreshHz());
             runs++;
         }
 
@@ -265,16 +267,24 @@ public static class CheatHooks
 
     private static void CapTo(Main self, int hz)
     {
+        if (_cappedHz == hz && self.IsFixedTimeStep)
+            return;
+        _cappedHz = hz;
         self.IsFixedTimeStep = true;
         self.TargetElapsedTime = TimeSpan.FromTicks(TimeSpan.TicksPerSecond / hz);
     }
 
     private static int RefreshHz()
     {
+        long now = LogicClock.ElapsedMilliseconds;
+        if (_refreshHz != 0 && now - _refreshHzAt < 1000)
+            return _refreshHz;
         IntPtr dc = GetDC(IntPtr.Zero);
         int hz = GetDeviceCaps(dc, 116);
         ReleaseDC(IntPtr.Zero, dc);
-        return hz < 30 ? 60 : hz;
+        _refreshHz = hz < 30 ? 60 : hz;
+        _refreshHzAt = now;
+        return _refreshHz;
     }
 
     private static void HandleIME(Action<Main> orig, Main self)
@@ -304,7 +314,7 @@ public static class CheatHooks
             PlayerInput.ScrollWheelDeltaForUI = 0;
         }
 
-        if (!BlockGameMouse && !CheatState.SelectHeld(kb))
+        if (!BlockGameMouse)
             return;
 
         PlayerInput.Triggers.Current.MouseLeft = false;

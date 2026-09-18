@@ -9,6 +9,7 @@ namespace Hakoniwa.Engine;
 
 public enum EditorTool
 {
+    None = -1,
     Marquee = 0,
     Brush = 1,
     Fill = 2,
@@ -31,7 +32,7 @@ public static class EditorSession
     public static readonly HistoryStack History = new();
     public static Schematic? Clipboard;
     public static bool Pasting;
-    public static EditorTool Tool;
+    public static EditorTool Tool = EditorTool.None;
 
     public static void SetTool(EditorTool tool)
     {

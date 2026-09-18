@@ -131,7 +131,7 @@ public static class SelectionOverlay
         var sel = EditorSession.Selection;
         if (!sel.Active)
         {
-            if (!mod && EditorSession.Tool != EditorTool.Marquee)
+            if (!mod)
                 return;
             sel.Begin(tx, ty, EditorSession.SelectionShape);
             _drag = Drag.Create;
