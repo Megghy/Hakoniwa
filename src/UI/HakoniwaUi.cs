@@ -162,7 +162,7 @@ public static class HakoniwaUi
         SignEditor.Draw();
         Chat.Draw();
         NotifyHost.Draw();
-        _backend.Render(Visible && SelectionOverlay.ShouldBlock());
+        _backend.Render();
         SyncMouseBlock();
     }
 
@@ -506,7 +506,7 @@ public static class HakoniwaUi
 
         bool left = mouseState.LeftButton == ButtonState.Pressed;
         bool right = mouseState.RightButton == ButtonState.Pressed;
-        bool overGameUi = Main.myPlayer >= 0 && Main.player[Main.myPlayer].mouseInterface;
+        bool overGameUi = Main.myPlayer >= 0 && Main.player[Main.myPlayer].lastMouseInterface;
         if (EditorSession.Pasting && !Ui.Mouse && !overGameUi)
         {
             if (left && !_leftWasDown)

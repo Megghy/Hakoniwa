@@ -24,7 +24,7 @@ internal static class AppUpdate
         }
 
         string current = CurrentVersion();
-        if (current == "dev")
+        if (current.StartsWith("dev", StringComparison.OrdinalIgnoreCase))
             return false;
 
         ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
@@ -50,6 +50,9 @@ internal static class AppUpdate
         var attr = (AssemblyInformationalVersionAttribute?)Attribute.GetCustomAttribute(
             typeof(AppUpdate).Assembly, typeof(AssemblyInformationalVersionAttribute));
         string value = attr?.InformationalVersion ?? "dev";
+        int plus = value.IndexOf('+');
+        if (plus >= 0)
+            value = value.Substring(0, plus);
         return value.Length == 0 ? "dev" : value;
     }
 

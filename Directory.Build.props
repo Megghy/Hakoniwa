@@ -12,6 +12,7 @@
     <Product>Hakoniwa - Terraria Architect Workshop</Product>
     <Copyright>Copyright © 2025</Copyright>
     <TerrariaDir Condition="'$(TerrariaDir)' == ''">D:\SteamLibrary\steamapps\common\Terraria</TerrariaDir>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <InformationalVersion>dev</InformationalVersion>
     <InformationalVersion Condition="'$(HakoniwaVersion)' != ''">$(HakoniwaVersion)</InformationalVersion>
   </PropertyGroup>

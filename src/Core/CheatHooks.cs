@@ -324,20 +324,13 @@ public static class CheatHooks
         Main.mouseLeft = false;
         Main.mouseRight = false;
         Main.blockMouse = true;
-        if (Main.myPlayer >= 0 && Main.player[Main.myPlayer].active)
-            Main.player[Main.myPlayer].mouseInterface = true;
     }
 
     private static void ClearHoverItem(Action orig)
     {
         orig();
-        if (!BlockGameMouse || Main.myPlayer < 0)
-            return;
-        var player = Main.player[Main.myPlayer];
-        if (!player.active)
-            return;
-        player.mouseInterface = true;
-        Main.blockMouse = true;
+        if (BlockGameMouse)
+            Main.blockMouse = true;
     }
 
     private static void LightTiles(Action<Rectangle> orig, Rectangle area)
