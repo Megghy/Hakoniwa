@@ -49,7 +49,6 @@ public sealed class FloatingBall
         }));
         _actions.Add(new("选区", "清除当前选区", Icons.Crop, () => EditorSession.Selection.Active, () => EditorSession.Selection.Clear()));
         _actions.Add(new("撤销", "撤销上一步操作", Icons.Undo, () => false, () => EditorSession.Undo()));
-        _actions.Add(new("重做", "重做操作", Icons.Redo, () => false, () => EditorSession.Redo()));
     }
 
     public void Draw()

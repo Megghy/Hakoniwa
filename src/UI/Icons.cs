@@ -29,7 +29,6 @@ public static class Icons
     public const string Lightbulb = "\uEC5D";
     public const string Move = "\uECA7";
     public const string Pencil = "\uECC5";
-    public const string Redo = "\uECF4";
     public const string Reload = "\uECFA";
     public const string Script = "\uED15";
     public const string SectionCopy = "\uED19";
@@ -63,7 +62,6 @@ public static class Icons
         0xEC5D, 0xEC5D,
         0xECA7, 0xECA7,
         0xECC5, 0xECC5,
-        0xECF4, 0xECF4,
         0xECFA, 0xECFA,
         0xED15, 0xED15,
         0xED19, 0xED19,
